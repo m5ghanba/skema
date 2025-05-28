@@ -25,7 +25,7 @@ import random
 # to save the results
 import tifffile as tiff  # Use tifffile to handle TIFF files
 import urllib.request
-
+import getpass
 
 
 print(torch.__version__)
@@ -456,12 +456,17 @@ model = segModel("Unet", "resnet18", in_channels=12, out_classes=OUT_CLASSES)#de
 
 # Load only the state dict
 
-# save_dir = "C:/Users/mohsenghanbari/saved_models/DataNoError1percent10and20mbandsPlusSubstrateAndBathy/NewResults"
-# state_dict_filename = "NormalizedInput_NoAugmentation_WithSubstrate_WithBathy_WithIndices_WithB5andNDVIRE_Unet_resnet18_20250416_191617.pth"
+# save_dir = "C:/Users/mohsenghanbari/saved_models/DataNoError1percent10and20mbandsPlusSubstrateAndBathy/NewResults" #"C:/Users/mohsenghanbari/saved_models/AnnotatedData/uploaded to git"  #"C:/Users/mohsenghanbari/saved_models/DataNoError1percent10and20mbandsPlusSubstrateAndBathy/NewResults"
+# state_dict_filename = "NormalizedInput_NoAugmentation_WithSubstrate_WithBathy_WithIndices_WithB5andNDVIRE_Unet_resnet18_20250416_191617.pth" #"model.pth" #"NormalizedInput_NoAugmentation_WithSubstrate_WithBathy_WithIndices_WithB5andNDVIRE_Unet_resnet18_20250416_191617.pth"
 # model.load_state_dict(torch.load(os.path.join(save_dir, state_dict_filename)))
 
 
-# instead of hardcoding the model address, provide a url to the model
+
+# instead load it from github 
+import torch
+import os
+import urllib.request
+
 def download_model(url, destination):
     if not os.path.exists(destination):
         print(f"Downloading model from {url}...")
@@ -469,7 +474,7 @@ def download_model(url, destination):
         print("Download complete.")
     return destination
 
-MODEL_URL = "https://github.com/m5ghanba/skema/releases/download/v0.1.0-alpha/ShuffledDataOnlyTrValNoTest_NormalizedInput_WithAugmentation_WithSubstrate_WithBathy_WithIndices_WithB5andNDVIRE_Unet_resnet18_20250524_103747.pth"
+MODEL_URL = "https://github.com/m5ghanba/labeled_pixel_collector/releases/download/v0.1.1-alpha/model.pth"
 LOCAL_PATH = os.path.join(os.path.expanduser("~"), ".skema", "model.pth")
 
 # Ensure directory exists
@@ -480,7 +485,6 @@ model_path = download_model(MODEL_URL, LOCAL_PATH)
 
 # Load model
 model.load_state_dict(torch.load(model_path, map_location="cpu"))
-
 
 
 

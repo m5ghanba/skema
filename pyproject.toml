@@ -35,3 +35,6 @@ gdal = ["gdal>=3.6,<3.8"]
 
 [project.scripts]
 skema = "skema.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["skema", "skema.*"]
