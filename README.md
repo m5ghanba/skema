@@ -19,14 +19,11 @@ source skema_env/bin/activate  # On macOS/Linux
 # Clone and install
 git clone https://github.com/yourusername/skema.git
 cd skema
-pip install .
+pip install build
+python -m build
+pip install --force-reinstall dist/skema-0.1.0-py3-none-any.whl  
 ```
 
-Alternatively, install from a wheel file:
-
-```bash
-pip install path/to/skema-0.1.0-py3-none-any.whl
-```
 
 ---
 
