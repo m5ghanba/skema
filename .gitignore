@@ -1,0 +1,25 @@
+# Ignore Python bytecode and cache
+__pycache__/
+*.py[cod]
+*.so
+
+# Ignore virtual environments
+skema_env/
+venv/
+
+# Ignore build artifacts
+build/
+dist/
+*.egg-info/
+
+# Ignore personal folders
+notebooks/
+scripts/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore model files (if applicable)
+*.pth
+*.pt

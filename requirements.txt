@@ -1,0 +1,22 @@
+# Core libraries
+torch==2.7.0
+torchvision==0.22.0
+pytorch-lightning==2.5.1.post0
+segmentation-models-pytorch==0.5.0
+torchmetrics==1.7.1
+albumentations==1.4.24
+
+# Data and IO
+numpy==1.26.4
+pandas==2.2.3
+scikit-learn==1.3.2
+scipy==1.11.4
+matplotlib==3.7.5
+tifffile==2023.4.12
+rasterio==1.4.3
+cppy==1.2.1
+kiwisolver==1.4.5
+
+# Utility
+tqdm==4.67.1
+click==8.2.0
