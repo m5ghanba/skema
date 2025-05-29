@@ -17,7 +17,7 @@ skema_env\Scripts\activate  # On Windows
 source skema_env/bin/activate  # On macOS/Linux
 
 # Clone and install
-git clone https://github.com/yourusername/skema.git
+git clone https://github.com/m5ghanba/skema.git
 cd skema
 pip install build
 python -m build
