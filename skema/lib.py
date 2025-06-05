@@ -535,8 +535,6 @@ class DatasetInference(SatelliteDataset):
         # Calculate indices using methods from the dataset class
         self.calculate_and_concat_indices(dataset)
 
-        # Create tiles with 50% overlap
-        self.tiles, self.tile_coords = self.create_tiles(self.image)
 
     def get_file_paths(self, main_directory):
         """Retrieve the four file paths from the directory."""
@@ -658,35 +656,46 @@ class DatasetInference(SatelliteDataset):
         # plt.title('bathy Image after')
         # plt.show()
 
-    def create_tiles(self, image):
-        """Create tiles with 50% overlap."""
+    def generate_tiles(self, image):
+        """Generator that yields one tile and its coordinates at a time."""
         h, w, c = image.shape
         tile_size = self.tile_size
         overlap = self.overlap
         step_size = int(tile_size * (1 - overlap))
-
-        tiles = []
-        tile_coords = []
-
-        # First loop: create tiles
+    
+        # Main tiling loop
         for i in range(0, h - tile_size + 1, step_size):
             for j in range(0, w - tile_size + 1, step_size):
                 tile = image[i:i+tile_size, j:j+tile_size]
                 if self.mean_per_channel is not None and self.std_per_channel is not None:
-                    tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel) # mean/std normalization
-                tiles.append(tile)
-                tile_coords.append((i, j))
-
-        # Handle edges and padding
+                    tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
+                yield tile, (i, j)
+    
+        # Edge padding
         for i in range(h - tile_size, h, step_size):
             for j in range(w - tile_size, w, step_size):
                 tile = self.pad_tile(image[i:min(i+tile_size, h), j:min(j+tile_size, w)])
                 if self.mean_per_channel is not None and self.std_per_channel is not None:
-                    tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel) # mean/std normalization
-                tiles.append(tile)
-                tile_coords.append((i, j))
+                    tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
+                yield tile, (i, j)
 
-        return tiles, tile_coords
+    def count_tiles(self, image_shape, tile_size, overlap):
+        """Count how many tiles will be generated, exactly matching generate_tiles()."""
+        h, w, _ = image_shape
+        step_size = int(tile_size * (1 - overlap))
+        count = 0
+    
+        # Main tiling loop
+        for i in range(0, h - tile_size + 1, step_size):
+            for j in range(0, w - tile_size + 1, step_size):
+                count += 1
+    
+        # Edge padding (only bottom-right area, just like in generate_tiles)
+        for i in range(h - tile_size, h, step_size):
+            for j in range(w - tile_size, w, step_size):
+                count += 1
+    
+        return count
 
     def pad_tile(self, tile):
         """Apply padding to the tile if it's smaller than the tile_size."""
@@ -695,57 +704,38 @@ class DatasetInference(SatelliteDataset):
         return np.pad(tile, ((0, pad_h), (0, pad_w), (0, 0)), mode='constant', constant_values=0)
 
     def run_model_on_tiles(self):
-        """Run the model on the tiles."""
-        self.model.eval()  # Set the model to evaluation mode
-        predictions = np.zeros_like(self.image[:, :, 0])  # To store the final prediction map
-        count_map = np.zeros_like(self.image[:, :, 0])  # To count overlapping pixels
+        """Run the model on each tile without preloading all into memory."""
+        self.model.eval()
+        predictions = np.zeros_like(self.image[:, :, 0], dtype=np.uint8)
+        count_map = np.zeros_like(self.image[:, :, 0], dtype=np.uint8)
+    
+        tile_generator = self.generate_tiles(self.image)
+        
+        # for tile, (i, j) in tqdm(tile_generator, desc="Predicting on Tiles"):
+        tile_generator = self.generate_tiles(self.image)
+        total_tiles = self.count_tiles(self.image.shape, self.tile_size, self.overlap)
 
-        for idx, tile in tqdm(enumerate(self.tiles), total=len(self.tiles), desc="Predicting on Tiles"):
-        # for idx, tile in enumerate(self.tiles):
-            tile = torch.tensor(tile).permute(2, 0, 1).unsqueeze(0).float().to(DEVICE)  # Add batch dimension
+        for tile, (i, j) in tqdm(tile_generator, total=total_tiles, desc="Predicting on Tiles", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{percentage:3.0f}%]"):
+            tile_tensor = torch.tensor(tile).permute(2, 0, 1).unsqueeze(0).float().to(DEVICE)
             with torch.no_grad():
-                prediction = self.model(tile)  # Run the model
-                prediction = (prediction.squeeze() > 0.5).cpu().numpy().astype(np.uint8)  # Apply threshold
-
-            i, j = self.tile_coords[idx]
-
-            # Calculate the effective height and width of the prediction tile (for edge cases)
+                prediction = self.model(tile_tensor)
+                prediction = (prediction.squeeze() > 0.5).cpu().numpy().astype(np.uint8)
+    
             effective_tile_height = min(self.tile_size, predictions.shape[0] - i)
             effective_tile_width = min(self.tile_size, predictions.shape[1] - j)
-
-            # Update predictions using the maximum value across overlapping tiles
+    
             predictions[i:i + effective_tile_height, j:j + effective_tile_width] = np.maximum(
                 predictions[i:i + effective_tile_height, j:j + effective_tile_width],
                 prediction[:effective_tile_height, :effective_tile_width])
-
-            # # Plot the original tile and the corresponding prediction side by side
-            # if idx % 10000 == 0:  # Example: Plot every 10th tile (or adjust as needed)
-            #    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-
-            #    # Select the 4th, 3rd, and 2nd channels for RGB visualization
-            #    rgb_tile = tile.squeeze(0).cpu().numpy()  # Convert from tensor to NumPy array
-            #    rgb_tile = rgb_tile[[3, 2, 1], :, :].transpose(1, 2, 0)  # Extract 4th, 3rd, and 2nd channels (index starts at 0)
-            #    stretched_tile = stretch_image(rgb_tile)
-
-            #    # Plot tile
-            #    axes[0].imshow(stretched_tile, cmap='viridis')  # imshow the stretched tile
-            #    axes[0].set_title(f"Tile {idx}")
-            #    axes[0].axis('off')  # Hide axes
-
-            #    # Plot prediction
-            #    axes[1].imshow(prediction, cmap='gray')
-            #    axes[1].set_title(f"Prediction {idx}")
-            #    axes[1].axis('off')  # Hide axes
-
-            #    # Show the plot
-            #    plt.show()
-
-        # Plot final predictions after all tiles have been processed
+    
+        # Plot the full prediction (optional)
         plt.imshow(predictions, cmap='gray')
         plt.title("Final Predictions")
-        plt.axis('off')  # Hide axes
+        plt.axis('off')
         plt.show()
+    
         return predictions
+
 
     def __getitem__(self, idx):
         """Return the tile and its corresponding coordinates."""
