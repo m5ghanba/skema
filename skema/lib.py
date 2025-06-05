@@ -703,32 +703,57 @@ class DatasetInference(SatelliteDataset):
         pad_w = max(0, self.tile_size - tile.shape[1])
         return np.pad(tile, ((0, pad_h), (0, pad_w), (0, 0)), mode='constant', constant_values=0)
 
-    def run_model_on_tiles(self):
-        """Run the model on each tile without preloading all into memory."""
-        self.model.eval()
-        predictions = np.zeros_like(self.image[:, :, 0], dtype=np.uint8)
-        count_map = np.zeros_like(self.image[:, :, 0], dtype=np.uint8)
-    
-        tile_generator = self.generate_tiles(self.image)
-        
-        # for tile, (i, j) in tqdm(tile_generator, desc="Predicting on Tiles"):
-        tile_generator = self.generate_tiles(self.image)
-        total_tiles = self.count_tiles(self.image.shape, self.tile_size, self.overlap)
 
-        for tile, (i, j) in tqdm(tile_generator, total=total_tiles, desc="Predicting on Tiles", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{percentage:3.0f}%]"):
-            tile_tensor = torch.tensor(tile).permute(2, 0, 1).unsqueeze(0).float().to(DEVICE)
-            with torch.no_grad():
-                prediction = self.model(tile_tensor)
-                prediction = (prediction.squeeze() > 0.5).cpu().numpy().astype(np.uint8)
+    def _process_batch(self, tiles, coords, predictions):
+        """Run inference on a batch of tiles and write results into full image."""
+        batch_tensor = torch.cat(tiles, dim=0).to(DEVICE)  # shape: (B, C, H, W)
+        outputs = self.model(batch_tensor)  # shape: (B, 1, H, W) or (B, H, W)
     
+        # Handle binary output (thresholding)
+        if outputs.shape[1] == 1:
+            outputs = (outputs.squeeze(1) > 0.5).cpu().numpy().astype(np.uint8)
+        else:
+            outputs = outputs.cpu().numpy().astype(np.uint8)
+    
+        # Write predictions into full image
+        for pred, (i, j) in zip(outputs, coords):
             effective_tile_height = min(self.tile_size, predictions.shape[0] - i)
             effective_tile_width = min(self.tile_size, predictions.shape[1] - j)
     
             predictions[i:i + effective_tile_height, j:j + effective_tile_width] = np.maximum(
                 predictions[i:i + effective_tile_height, j:j + effective_tile_width],
-                prediction[:effective_tile_height, :effective_tile_width])
+                pred[:effective_tile_height, :effective_tile_width]
+            )
+
+    def run_model_on_tiles(self, batch_size=8):
+        """Run the model on tiles in batches with GPU acceleration and low RAM usage."""
+        self.model.eval()
+        predictions = np.zeros_like(self.image[:, :, 0], dtype=np.uint8)
     
-        # Plot the full prediction (optional)
+        tile_generator = self.generate_tiles(self.image)
+        total_tiles = self.count_tiles(self.image.shape, self.tile_size, self.overlap)
+    
+        batch_tiles = []
+        batch_coords = []
+    
+        with torch.no_grad():
+            for tile, (i, j) in tqdm(tile_generator, total=total_tiles, desc="Predicting on Tiles"):
+                # Preprocess and add tile to batch
+                tile_tensor = torch.tensor(tile).permute(2, 0, 1).unsqueeze(0).float()
+                batch_tiles.append(tile_tensor)
+                batch_coords.append((i, j))
+    
+                # Run batch when full
+                if len(batch_tiles) == batch_size:
+                    self._process_batch(batch_tiles, batch_coords, predictions)
+                    batch_tiles.clear()
+                    batch_coords.clear()
+    
+            # Handle remaining tiles
+            if batch_tiles:
+                self._process_batch(batch_tiles, batch_coords, predictions)
+    
+        # Optional: visualize the final result
         plt.imshow(predictions, cmap='gray')
         plt.title("Final Predictions")
         plt.axis('off')
