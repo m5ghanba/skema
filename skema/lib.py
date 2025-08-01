@@ -517,14 +517,47 @@ def normalize_tile_mean_std(tile, mean_per_channel, std_per_channel):
     normalized_tile = (tile - mean) / (std + 1e-8)
     return normalized_tile
 
+def create_weight_map(tile_size, halo_size):
+    """Create a weight map that gives less weight to edge pixels and more to center."""
+    weight_map = np.ones((tile_size, tile_size), dtype=np.float32)
+    
+    # Create a linear fade from edge to center
+    for i in range(halo_size):
+        fade_weight = (i + 1) / halo_size
+        # Top and bottom edges
+        weight_map[i, :] = fade_weight
+        weight_map[tile_size-1-i, :] = fade_weight
+        # Left and right edges
+        weight_map[:, i] = np.minimum(weight_map[:, i], fade_weight)
+        weight_map[:, tile_size-1-i] = np.minimum(weight_map[:, tile_size-1-i], fade_weight)
+    
+    return weight_map
+#  July 2025 - Same as above but with these modifications: 
+# 1.padding (zero-padding was failing in the edge tiles, so using mirror padding)
+# 2.Handling the overlap differently now using a weighted average method: we give 
+# weight 1 topredictions from a square sized halo_size by halo_size in the centre 
+# of each tile and the rest of the tile get weight values faded from  1 to 0 going
+# from the edge of the square in the centre to the edge of the tile. Specifically, 
+# (a) Accumulation Process:Each tile adds its weighted prediction to the accumulator:
+# predictions += tile_pred * tile_weights. Then, each tile adds its weights to the 
+# weight accumulator: weight_accumulator += tile_weights 
+# (b) Final Normalization: At the end, we divide by total weights: 
+# predictions = predictions / weight_accumulator (Converts probabilities > 0.5 to 1
+# probabilities ≤ 0.5 to 0)
+# This gives us the weighted average of all predictions that contributed to each pixel
 class DatasetInference(SatelliteDataset):
-    def __init__(self, main_directory, model, dataset, tile_size=512, overlap=0.5, mean_per_channel=None, std_per_channel=None):
+    def __init__(self, main_directory, model, dataset, tile_size=512, overlap=0.7, mean_per_channel=None, std_per_channel=None, halo_size=64, padding_mode='reflect'):
         self.main_directory = main_directory
         self.tile_size = tile_size
         self.overlap = overlap
         self.model = model.to(DEVICE)  # The trained model
         self.mean_per_channel = mean_per_channel
         self.std_per_channel = std_per_channel
+        self.halo_size = halo_size
+        self.padding_mode = padding_mode  # 'reflect', 'edge', 'constant', or 'symmetric'
+
+        # Create weight map for weighted averaging
+        self.weight_map = create_weight_map(tile_size, halo_size)
 
         # Get the four required file paths
         self.image_path1, self.image_path2, self.substrate_path, self.bathymetry_path = self.get_file_paths(main_directory)
@@ -671,13 +704,59 @@ class DatasetInference(SatelliteDataset):
                     tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
                 yield tile, (i, j)
     
-        # Edge padding
-        for i in range(h - tile_size, h, step_size):
-            for j in range(w - tile_size, w, step_size):
-                tile = self.pad_tile(image[i:min(i+tile_size, h), j:min(j+tile_size, w)])
-                if self.mean_per_channel is not None and self.std_per_channel is not None:
-                    tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
-                yield tile, (i, j)
+        # Edge padding - handle incomplete tiles at edges
+        edge_positions = []
+        
+        # Right edge tiles
+        if w % step_size != 0 or w - tile_size < 0:
+            for i in range(0, h - tile_size + 1, step_size):
+                j_start = max(0, w - tile_size)
+                if j_start not in [j for _, j in edge_positions if i == i]:  # Avoid duplicates
+                    edge_positions.append((i, j_start))
+        
+        # Bottom edge tiles
+        if h % step_size != 0 or h - tile_size < 0:
+            for j in range(0, w - tile_size + 1, step_size):
+                i_start = max(0, h - tile_size)
+                if i_start not in [i for i, _ in edge_positions if j == j]:  # Avoid duplicates
+                    edge_positions.append((i_start, j))
+        
+        # Bottom-right corner tile
+        if (h % step_size != 0 or h - tile_size < 0) and (w % step_size != 0 or w - tile_size < 0):
+            i_start = max(0, h - tile_size)
+            j_start = max(0, w - tile_size)
+            if (i_start, j_start) not in edge_positions:
+                edge_positions.append((i_start, j_start))
+        
+        # Generate edge tiles
+        for i, j in edge_positions:
+            tile = image[i:min(i+tile_size, h), j:min(j+tile_size, w)]
+            tile = self.pad_tile(tile)
+            if self.mean_per_channel is not None and self.std_per_channel is not None:
+                tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
+            yield tile, (i, j)
+
+    def pad_tile(self, tile):
+        """Apply intelligent padding to the tile if it's smaller than the tile_size."""
+        pad_h = max(0, self.tile_size - tile.shape[0])
+        pad_w = max(0, self.tile_size - tile.shape[1])
+        
+        if pad_h == 0 and pad_w == 0:
+            return tile
+            
+        # Use the specified padding mode
+        if self.padding_mode == 'reflect':
+            # Handle cases where tile is too small for reflect padding
+            if tile.shape[0] == 1 and pad_h > 0:
+                mode = 'edge'  # Fall back to edge for very small tiles
+            elif tile.shape[1] == 1 and pad_w > 0:
+                mode = 'edge'
+            else:
+                mode = 'reflect'
+        else:
+            mode = self.padding_mode
+            
+        return np.pad(tile, ((0, pad_h), (0, pad_w), (0, 0)), mode=mode)
 
     def count_tiles(self, image_shape, tile_size, overlap):
         """Count how many tiles will be generated, exactly matching generate_tiles()."""
@@ -690,45 +769,75 @@ class DatasetInference(SatelliteDataset):
             for j in range(0, w - tile_size + 1, step_size):
                 count += 1
     
-        # Edge padding (only bottom-right area, just like in generate_tiles)
-        for i in range(h - tile_size, h, step_size):
-            for j in range(w - tile_size, w, step_size):
-                count += 1
+        # Edge tiles count
+        edge_positions = []
+        
+        # Right edge tiles
+        if w % step_size != 0 or w - tile_size < 0:
+            for i in range(0, h - tile_size + 1, step_size):
+                j_start = max(0, w - tile_size)
+                edge_positions.append((i, j_start))
+        
+        # Bottom edge tiles
+        if h % step_size != 0 or h - tile_size < 0:
+            for j in range(0, w - tile_size + 1, step_size):
+                i_start = max(0, h - tile_size)
+                edge_positions.append((i_start, j))
+        
+        # Bottom-right corner tile
+        if (h % step_size != 0 or h - tile_size < 0) and (w % step_size != 0 or w - tile_size < 0):
+            i_start = max(0, h - tile_size)
+            j_start = max(0, w - tile_size)
+            edge_positions.append((i_start, j_start))
+        
+        # Remove duplicates
+        edge_positions = list(set(edge_positions))
+        count += len(edge_positions)
     
         return count
 
-    def pad_tile(self, tile):
-        """Apply padding to the tile if it's smaller than the tile_size."""
-        pad_h = max(0, self.tile_size - tile.shape[0])
-        pad_w = max(0, self.tile_size - tile.shape[1])
-        return np.pad(tile, ((0, pad_h), (0, pad_w), (0, 0)), mode='constant', constant_values=0)
-
-
-    def _process_batch(self, tiles, coords, predictions):
-        """Run inference on a batch of tiles and write results into full image."""
-        batch_tensor = torch.cat(tiles, dim=0).to(DEVICE)  # shape: (B, C, H, W)
-        outputs = self.model(batch_tensor)  # shape: (B, 1, H, W) or (B, H, W)
+    def _process_batch_weighted_averaging(self, tiles, coords, predictions, weight_accumulator):
+        """Process batch using weighted averaging with halo method."""
+        batch_tensor = torch.cat(tiles, dim=0).to(DEVICE)
+        outputs = self.model(batch_tensor)
     
         # Handle binary output (thresholding)
         if outputs.shape[1] == 1:
-            outputs = (outputs.squeeze(1) > 0.5).cpu().numpy().astype(np.uint8)
+            outputs = outputs.squeeze(1).sigmoid().cpu().numpy()  # Keep as probabilities for averaging
         else:
-            outputs = outputs.cpu().numpy().astype(np.uint8)
+            outputs = torch.softmax(outputs, dim=1).cpu().numpy()  # Multi-class probabilities
     
-        # Write predictions into full image
+        # Process each prediction in the batch
         for pred, (i, j) in zip(outputs, coords):
-            effective_tile_height = min(self.tile_size, predictions.shape[0] - i)
-            effective_tile_width = min(self.tile_size, predictions.shape[1] - j)
-    
-            predictions[i:i + effective_tile_height, j:j + effective_tile_width] = np.maximum(
-                predictions[i:i + effective_tile_height, j:j + effective_tile_width],
-                pred[:effective_tile_height, :effective_tile_width]
-            )
+            # Calculate the region bounds in the full image
+            end_i = min(i + self.tile_size, predictions.shape[0])
+            end_j = min(j + self.tile_size, predictions.shape[1])
+            
+            # Calculate effective tile size (in case of edge tiles)
+            effective_h = end_i - i
+            effective_w = end_j - j
+            
+            # Get the corresponding portion of the prediction and weight map
+            tile_pred = pred[:effective_h, :effective_w]
+            tile_weights = self.weight_map[:effective_h, :effective_w]
+            
+            # Weighted accumulation
+            predictions[i:end_i, j:end_j] += tile_pred * tile_weights
+            weight_accumulator[i:end_i, j:end_j] += tile_weights
 
     def run_model_on_tiles(self, batch_size=8):
-        """Run the model on tiles in batches with GPU acceleration and low RAM usage."""
+        """
+        Run the model on tiles with improved edge handling.
+        
+        Args:
+            batch_size (int): Number of tiles to process in each batch
+        """
         self.model.eval()
-        predictions = np.zeros_like(self.image[:, :, 0], dtype=np.uint8)
+        
+
+        predictions = np.zeros_like(self.image[:, :, 0], dtype=np.float32)
+        weight_accumulator = np.zeros_like(self.image[:, :, 0], dtype=np.float32)
+
     
         tile_generator = self.generate_tiles(self.image)
         total_tiles = self.count_tiles(self.image.shape, self.tile_size, self.overlap)
@@ -745,17 +854,32 @@ class DatasetInference(SatelliteDataset):
     
                 # Run batch when full
                 if len(batch_tiles) == batch_size:
-                    self._process_batch(batch_tiles, batch_coords, predictions)
+
+                    self._process_batch_weighted_averaging(batch_tiles, batch_coords, predictions, weight_accumulator)
+
                     batch_tiles.clear()
                     batch_coords.clear()
     
             # Handle remaining tiles
             if batch_tiles:
-                self._process_batch(batch_tiles, batch_coords, predictions)
+                self._process_batch_weighted_averaging(batch_tiles, batch_coords, predictions, weight_accumulator)
+    
+        # Finalize predictions
+
+        # Avoid division by zero
+        weight_accumulator = np.where(weight_accumulator == 0, 1, weight_accumulator)
+        predictions = predictions / weight_accumulator
+            
+        # Convert back to binary/class predictions
+        if predictions.ndim == 2:  # Binary case
+            predictions = (predictions > 0.5).astype(np.uint8)
+        else:  # Multi-class case
+            predictions = np.argmax(predictions, axis=-1).astype(np.uint8)
     
         # Optional: visualize the final result
+        plt.figure(figsize=(10, 8))
         plt.imshow(predictions, cmap='gray')
-        plt.title("Final Predictions")
+        plt.title(f"Final Predictions ({method} method)")
         plt.axis('off')
         plt.show()
     
@@ -823,9 +947,13 @@ def classify(input_dir, output_filename, mean_per_channel, std_per_channel):
         model=model,
         dataset=data,
         mean_per_channel=mean_per_channel,
-        std_per_channel=std_per_channel
+        std_per_channel=std_per_channel,
+        tile_size=512,
+        overlap=0.7,  
+        halo_size=64,
+        padding_mode='reflect'  # Use reflect padding instead of zero padding
     )
 
-    predictions = dataset.run_model_on_tiles()
+    predictions = dataset.run_model_on_tiles(batch_size=8)
     output_path = os.path.join(input_dir, output_filename)
     dataset.save_output(predictions, output_path)
