@@ -468,10 +468,9 @@ import os
 import urllib.request
 
 def download_model(url, destination):
-    if not os.path.exists(destination):
-        print(f"Downloading model from {url}...")
-        urllib.request.urlretrieve(url, destination)
-        print("Download complete.")
+    print(f"Downloading model from {url}...")
+    urllib.request.urlretrieve(url, destination)
+    print("Download complete.")
     return destination
 
 MODEL_URL = "https://github.com/m5ghanba/labeled_pixel_collector/releases/download/v0.1.1-alpha/model.pth"
@@ -879,7 +878,7 @@ class DatasetInference(SatelliteDataset):
         # Optional: visualize the final result
         plt.figure(figsize=(10, 8))
         plt.imshow(predictions, cmap='gray')
-        plt.title(f"Final Prediction")
+        plt.title("Final Prediction")
         plt.axis('off')
         plt.show()
     
