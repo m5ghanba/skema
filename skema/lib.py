@@ -879,7 +879,7 @@ class DatasetInference(SatelliteDataset):
         # Optional: visualize the final result
         plt.figure(figsize=(10, 8))
         plt.imshow(predictions, cmap='gray')
-        plt.title(f"Final Predictions ({method} method)")
+        plt.title(f"Final Prediction")
         plt.axis('off')
         plt.show()
     
