@@ -21,6 +21,7 @@ git clone https://github.com/m5ghanba/skema.git
 cd skema
 pip install build
 python -m build
+pip install --upgrade pip setuptools wheel
 pip install --force-reinstall dist/skema-0.1.0-py3-none-any.whl  
 ```
 
