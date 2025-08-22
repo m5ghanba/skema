@@ -448,7 +448,7 @@ class segModel(pl.LightningModule):
 
 
 # https://smp.readthedocs.io/en/latest/models.html#upernet     encoders: https://smp.readthedocs.io/en/latest/encoders.html
-model = segModel("Unet", "resnet18", in_channels=12, out_classes=OUT_CLASSES)#decoder_channels=(512, 256, 128, 64), encoder_depth=4,  resnet18
+model = segModel("Unet", "tu-maxvit_tiny_tf_512", in_channels=12, out_classes=OUT_CLASSES)#decoder_channels=(512, 256, 128, 64), encoder_depth=4,  resnet18
 
 # # Load the full Lightning checkpoint
 # model = segModel(model_name, encoder_name, in_channels=8, out_classes=OUT_CLASSES)
