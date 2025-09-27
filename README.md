@@ -25,8 +25,8 @@ pip install --upgrade pip setuptools wheel
 pip install --force-reinstall dist/skema-0.1.0-py3-none-any.whl
 
 
-# For GPU users, install cuda-supported torch. Skip this if you don't have a GPU. 
-# Install PyTorch with CUDA support first, choosing the version that matches your CUDA Toolkit (e.g., CUDA 12.1). Check your CUDA version with `nvcc --version`.
+# For GPU users, install cuda-supported PyTorch. Skip this if you don't have a GPU. 
+# Install PyTorch with CUDA support, choosing the version that matches your CUDA Toolkit (e.g., CUDA 12.1). Check your CUDA version with `nvcc --version`.
 # For CUDA 12.1
 pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121
 # For CUDA 11.8 (alternative)
@@ -41,8 +41,7 @@ pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https
 Run classification on a new Sentinel-2 image:
 
 ```bash
-skema --input-dir path/to/image_folder \
-      --output-filename output.tif
+skema --input-dir path/to/image_folder --output-filename output.tif
 ```
 
 ---
