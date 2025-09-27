@@ -473,7 +473,7 @@ def download_model(url, destination):
     print("Download complete.")
     return destination
 
-MODEL_URL = "https://github.com/m5ghanba/labeled_pixel_collector/releases/download/v0.1.1-alpha/model.pth"
+MODEL_URL = "https://github.com/m5ghanba/skema/releases/download/v0.1.0-alpha/model.pth"
 LOCAL_PATH = os.path.join(os.path.expanduser("~"), ".skema", "model.pth")
 
 # Ensure directory exists
