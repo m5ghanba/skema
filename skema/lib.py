@@ -843,7 +843,7 @@ class DatasetInference(SatelliteDataset):
         return count
 
     def _process_batch(self, tiles, coords, predictions):
-        """Run inference on a batch of tiles and write results into full image."""
+        """Not weighted - Run inference on a batch of tiles and write results into full image."""
         batch_tensor = torch.cat(tiles, dim=0).to(DEVICE)  # shape: (B, C, H, W)
         outputs = self.model(batch_tensor)  # shape: (B, 1, H, W) or (B, H, W)
     
@@ -1057,6 +1057,6 @@ def classify(input_dir, output_filename, mean_per_channel, std_per_channel):
         padding_mode='reflect'  # Use reflect padding instead of zero padding
     )
 
-    predictions = dataset.run_model_on_tiles_not_weighted(batch_size=8)  # or change it  run_model_on_tiles for the weighted option
+    predictions = dataset.run_model_on_tiles(batch_size=8)  # run_model_on_tiles for the weighted option and run_model_on_tiles_not_weighted for the not-weighted one
     output_path = os.path.join(input_dir, output_filename)
     dataset.save_output(predictions, output_path)
