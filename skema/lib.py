@@ -735,6 +735,53 @@ class DatasetInference(SatelliteDataset):
                 tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
             yield tile, (i, j)
 
+    def generate_tiles_not_weighted(self, image):
+        """Generator that yields one tile and its coordinates at a time."""
+        h, w, c = image.shape
+        tile_size = self.tile_size
+        overlap = self.overlap
+        step_size = int(tile_size * (1 - overlap))
+    
+        # Main tiling loop
+        for i in range(0, h - tile_size + 1, step_size):
+            for j in range(0, w - tile_size + 1, step_size):
+                tile = image[i:i+tile_size, j:j+tile_size]
+                if self.mean_per_channel is not None and self.std_per_channel is not None:
+                    tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
+                yield tile, (i, j)
+    
+        # Edge padding
+        for i in range(h - tile_size, h, step_size):
+            for j in range(w - tile_size, w, step_size):
+                tile = self.pad_tile_not_weighted(image[i:min(i+tile_size, h), j:min(j+tile_size, w)])
+                if self.mean_per_channel is not None and self.std_per_channel is not None:
+                    tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
+                yield tile, (i, j)
+
+    def pad_tile_not_weighted(self, tile):
+        """Apply padding to the tile if it's smaller than the tile_size."""
+        pad_h = max(0, self.tile_size - tile.shape[0])
+        pad_w = max(0, self.tile_size - tile.shape[1])
+        # return np.pad(tile, ((0, pad_h), (0, pad_w), (0, 0)), mode='constant', constant_values=0)
+        return np.pad(tile, ((0, pad_h), (0, pad_w), (0, 0)), mode='reflect')
+
+    def count_tiles_not_weighted(self, image_shape, tile_size, overlap):
+        """Count how many tiles will be generated, exactly matching generate_tiles()."""
+        h, w, _ = image_shape
+        step_size = int(tile_size * (1 - overlap))
+        count = 0
+    
+        # Main tiling loop
+        for i in range(0, h - tile_size + 1, step_size):
+            for j in range(0, w - tile_size + 1, step_size):
+                count += 1
+    
+        # Edge padding (only bottom-right area, just like in generate_tiles)
+        for i in range(h - tile_size, h, step_size):
+            for j in range(w - tile_size, w, step_size):
+                count += 1
+    
+        return count
     def pad_tile(self, tile):
         """Apply intelligent padding to the tile if it's smaller than the tile_size."""
         pad_h = max(0, self.tile_size - tile.shape[0])
@@ -910,8 +957,8 @@ class DatasetInference(SatelliteDataset):
         self.model.eval()
         predictions = np.zeros_like(self.image[:, :, 0], dtype=np.uint8)
     
-        tile_generator = self.generate_tiles(self.image)
-        total_tiles = self.count_tiles(self.image.shape, self.tile_size, self.overlap)
+        tile_generator = self.generate_tiles_not_weighted(self.image)
+        total_tiles = self.count_tiles_not_weighted(self.image.shape, self.tile_size, self.overlap)
     
         batch_tiles = []
         batch_coords = []
