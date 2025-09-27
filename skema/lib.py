@@ -795,6 +795,27 @@ class DatasetInference(SatelliteDataset):
     
         return count
 
+    def _process_batch(self, tiles, coords, predictions):
+        """Run inference on a batch of tiles and write results into full image."""
+        batch_tensor = torch.cat(tiles, dim=0).to(DEVICE)  # shape: (B, C, H, W)
+        outputs = self.model(batch_tensor)  # shape: (B, 1, H, W) or (B, H, W)
+    
+        # Handle binary output (thresholding)
+        if outputs.shape[1] == 1:
+            outputs = (outputs.squeeze(1) > 0.5).cpu().numpy().astype(np.uint8)
+        else:
+            outputs = outputs.cpu().numpy().astype(np.uint8)
+    
+        # Write predictions into full image
+        for pred, (i, j) in zip(outputs, coords):
+            effective_tile_height = min(self.tile_size, predictions.shape[0] - i)
+            effective_tile_width = min(self.tile_size, predictions.shape[1] - j)
+    
+            predictions[i:i + effective_tile_height, j:j + effective_tile_width] = np.maximum(
+                predictions[i:i + effective_tile_height, j:j + effective_tile_width],
+                pred[:effective_tile_height, :effective_tile_width]
+            )
+
     def _process_batch_weighted_averaging(self, tiles, coords, predictions, weight_accumulator):
         """Process batch using weighted averaging with halo method."""
         batch_tensor = torch.cat(tiles, dim=0).to(DEVICE)
@@ -884,6 +905,42 @@ class DatasetInference(SatelliteDataset):
     
         return predictions
 
+    def run_model_on_tiles_not_weighted(self, batch_size=8):
+        """Run the model on tiles in batches with GPU acceleration and low RAM usage."""
+        self.model.eval()
+        predictions = np.zeros_like(self.image[:, :, 0], dtype=np.uint8)
+    
+        tile_generator = self.generate_tiles(self.image)
+        total_tiles = self.count_tiles(self.image.shape, self.tile_size, self.overlap)
+    
+        batch_tiles = []
+        batch_coords = []
+    
+        with torch.no_grad():
+            for tile, (i, j) in tqdm(tile_generator, total=total_tiles, desc="Predicting on Tiles"):
+                # Preprocess and add tile to batch
+                tile_tensor = torch.tensor(tile).permute(2, 0, 1).unsqueeze(0).float()
+                batch_tiles.append(tile_tensor)
+                batch_coords.append((i, j))
+    
+                # Run batch when full
+                if len(batch_tiles) == batch_size:
+                    self._process_batch(batch_tiles, batch_coords, predictions)
+                    batch_tiles.clear()
+                    batch_coords.clear()
+    
+            # Handle remaining tiles
+            if batch_tiles:
+                self._process_batch(batch_tiles, batch_coords, predictions)
+    
+        # Optional: visualize the final result
+        plt.imshow(predictions, cmap='gray')
+        plt.title("Final Predictions")
+        plt.axis('off')
+        plt.show()
+    
+        return predictions
+
 
     def __getitem__(self, idx):
         """Return the tile and its corresponding coordinates."""
@@ -948,11 +1005,11 @@ def classify(input_dir, output_filename, mean_per_channel, std_per_channel):
         mean_per_channel=mean_per_channel,
         std_per_channel=std_per_channel,
         tile_size=512,
-        overlap=0.7,  
+        overlap=0.5,  
         halo_size=64,
         padding_mode='reflect'  # Use reflect padding instead of zero padding
     )
 
-    predictions = dataset.run_model_on_tiles(batch_size=8)
+    predictions = dataset.run_model_on_tiles_not_weighted(batch_size=8)  # or change it  run_model_on_tiles for the weighted option
     output_path = os.path.join(input_dir, output_filename)
     dataset.save_output(predictions, output_path)
