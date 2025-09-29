@@ -23,3 +23,6 @@ Thumbs.db
 # Ignore model files (if applicable)
 *.pth
 *.pt
+
+# Ignore the substrate and bathymetry TIFF files
+skema/static/bathy_substrate/*.tif

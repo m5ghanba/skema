@@ -27,6 +27,11 @@ import tifffile as tiff  # Use tifffile to handle TIFF files
 import urllib.request
 import getpass
 
+# preprocessing
+import subprocess
+import xml.etree.ElementTree as ET
+from importlib.resources import files
+
 
 print(torch.__version__)
 print(torch.version.cuda)  # Should print the version of CUDA PyTorch is using
@@ -36,6 +41,239 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Set the device to GPU if available, otherwise use CPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(DEVICE)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def extract_bands_to_geotiffs(safe_dir, output_dir):
+    product_id = os.path.basename(safe_dir).replace(".SAFE", "")
+
+    bands_10m = ['B02', 'B03', 'B04', 'B08']
+    bands_20m = ['B05', 'B06', 'B07', 'B8A', 'B11', 'B12']
+
+    def find_band_files(bands, root_dir):
+        band_files = {}
+        for root, dirs, files_ in os.walk(root_dir):
+            for file in files_:
+                if file.endswith(".jp2"):
+                    for band in bands:
+                        if band in file and band not in band_files:
+                            band_files[band] = os.path.join(root, file)
+        for band in bands:
+            if band not in band_files:
+                print(f"Warning: {band}.jp2 not found in {safe_dir}")
+        return [band_files.get(b) for b in bands]
+
+    band_paths_10m = find_band_files(bands_10m, safe_dir)
+    band_paths_20m = find_band_files(bands_20m, safe_dir)
+
+    if None in band_paths_10m:
+        print(f"Missing some 10m bands in {safe_dir}, skipping...")
+        return None, None
+
+    def get_processing_baseline(safe_dir):
+        xml_path = None
+        for root, dirs, files_ in os.walk(safe_dir):
+            for f in files_:
+                if f.startswith("MTD_MSI") and f.endswith(".xml"):
+                    xml_path = os.path.join(root, f)
+                    break
+            if xml_path:
+                break
+        if not xml_path:
+            print(f"No MTD_MSIL2A.xml found in {safe_dir}")
+            return None
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        pb = root.findtext(".//PROCESSING_BASELINE")
+        return float(pb) if pb else None
+
+    pb = get_processing_baseline(safe_dir)
+    shift = 1000 if pb and pb >= 4.0 else 0
+
+    def write_multiband_geotiff(output_path, band_paths):
+        with rasterio.open(band_paths[0]) as src:
+            meta = src.meta.copy()
+            meta.update({"count": len(band_paths), "dtype": "uint16", "driver": "GTiff"})
+        with rasterio.open(output_path, "w", **meta) as dst:
+            for i, bp in enumerate(band_paths):
+                with rasterio.open(bp) as bsrc:
+                    arr = bsrc.read(1).astype(np.int32) - shift
+                    arr = np.clip(arr, 0, None).astype(np.uint16)
+                    dst.write(arr, i + 1)
+
+    output_10m = os.path.join(output_dir, f"{product_id}_B2B3B4B8.tif")
+    write_multiband_geotiff(output_10m, band_paths_10m)
+
+    output_20m = None
+    if None not in band_paths_20m:
+        output_20m = os.path.join(output_dir, f"{product_id}_B5B6B7B8A_B11B12.tif")
+        write_multiband_geotiff(output_20m, band_paths_20m)
+
+    return output_10m, output_20m
+
+
+def warp_bathy_and_subs(safe_folder_root):
+    # Look for _B2B3B4B8.tif inside each subfolder
+    for folder_name in os.listdir(safe_folder_root):
+        folder_path = os.path.join(safe_folder_root, folder_name)
+        if not os.path.isdir(folder_path):
+            continue
+
+        tif_file = next((f for f in os.listdir(folder_path) if f.endswith("_B2B3B4B8.tif")), None)
+        if not tif_file:
+            print(f"No reference image found in {folder_path}, skipping...")
+            continue
+
+        reference_tif = os.path.join(folder_path, tif_file)
+
+        # Define static files to warp and their suffixes
+        input_files = {
+            "Bathymetry_10m.tif": "_Bathy.tif",
+            "NCC_substrate_20m.tif": "_SubsNCC.tif",
+            "SOG_substrate_20m.tif": "_SubsSOG.tif",
+            "WCVI_substrate_20m.tif": "_SubsWCVI.tif",
+            "QCS_substrate_20m.tif": "_SubsQCS.tif",
+            "HG_substrate_20m.tif": "_SubsHG.tif",
+        }
+
+        # Load bathy/substrate files from static directory
+        for file_name, suffix in input_files.items():
+            try:
+                static_path = files("skema.static.bathy_substrate").joinpath(file_name)
+                input_file_path = str(static_path)
+            except Exception as e:
+                print(f"Failed to access static file {file_name}: {e}")
+                continue
+
+            output_file_path = os.path.join(folder_path, folder_name + suffix)
+
+            with rasterio.open(reference_tif) as ref:
+                bounds = ref.bounds
+                crs = ref.crs.to_string()
+
+            gdalwarp_cmd = [
+                "gdalwarp",
+                "-t_srs", crs,
+                "-tr", "10", "10",
+                "-te", str(bounds.left), str(bounds.bottom), str(bounds.right), str(bounds.top),
+                "-r", "bilinear",
+                input_file_path, output_file_path
+            ]
+
+            subprocess.run(gdalwarp_cmd)
+            print(f"Warped and saved: {output_file_path}")
+
+
+def fill_nodata_fixed_value(input_file, output_file, fill_value):
+    """Fill NoData cells in a raster with a fixed value."""
+    from osgeo import gdal
+    dataset = gdal.Open(input_file, gdal.GA_ReadOnly)
+    if not dataset:
+        raise FileNotFoundError(f"Unable to open {input_file}")
+
+    band = dataset.GetRasterBand(1)
+    nodata_value = band.GetNoDataValue()
+
+    driver = gdal.GetDriverByName("GTiff")
+    out_dataset = driver.CreateCopy(output_file, dataset, strict=0)
+    out_band = out_dataset.GetRasterBand(1)
+
+    data = out_band.ReadAsArray()
+    if nodata_value is not None:
+        data[data == nodata_value] = fill_value
+
+    out_band.WriteArray(data)
+    out_band.DeleteNoDataValue()
+
+    out_band.FlushCache()
+    out_dataset.FlushCache()
+    dataset = None
+    out_dataset = None
+
+    print(f"Processed and saved: {output_file}")
+    os.remove(input_file)
+
+
+def merge_substrate_files_single(safe_output_dir):
+    """Merge substrate rasters in a single SAFE output folder into _Subs.tif."""
+    suffixes = ["_SubsNCC.tif", "_SubsSOG.tif", "_SubsWCVI.tif", "_SubsQCS.tif", "_SubsHG.tif"]
+    valid_values = {1, 2, 3, 4}
+
+    # Collect input rasters
+    input_files = [os.path.join(safe_output_dir, f) for f in os.listdir(safe_output_dir) if any(f.endswith(s) for s in suffixes)]
+    if len(input_files) != 5:
+        print(f"Not all substrate files found in {safe_output_dir}, skipping merge.")
+        return None
+
+    b2348_file = next((f for f in os.listdir(safe_output_dir) if f.endswith("_B2B3B4B8.tif")), None)
+    if not b2348_file:
+        print(f"No reference image in {safe_output_dir}, skipping merge.")
+        return None
+
+    base_name = b2348_file.replace("_B2B3B4B8.tif", "")
+    output_file = os.path.join(safe_output_dir, f"{base_name}_Subs.tif")
+
+    with rasterio.open(input_files[0]) as src:
+        meta = src.meta.copy()
+        height, width = src.shape
+
+    merged_data = np.zeros((height, width), dtype=meta["dtype"])
+    for file in input_files:
+        with rasterio.open(file) as src:
+            data = src.read(1)
+            mask = np.isin(data, list(valid_values))
+            merged_data[mask] = data[mask]
+
+    meta.update(dtype=rasterio.uint8, nodata=0, compress="LZW")
+    with rasterio.open(output_file, "w", **meta) as dst:
+        dst.write(merged_data, 1)
+
+    print(f"Merged substrate saved: {output_file}")
+
+    # delete originals
+    for file in input_files:
+        try:
+            os.remove(file)
+        except Exception as e:
+            print(f"Error deleting {file}: {e}")
+
+    return output_file
+
+
+def apply_fill_nodata_single(safe_output_dir, fill_value_subs=0, fill_value_bathy=-2000):
+    """Fill nodata for substrate and bathymetry in one SAFE folder."""
+    subs_file = next((f for f in os.listdir(safe_output_dir) if f.endswith("_Subs.tif")), None)
+    bathy_file = next((f for f in os.listdir(safe_output_dir) if f.endswith("_Bathy.tif")), None)
+
+    if subs_file:
+        base_name = subs_file.replace("_Subs.tif", "")
+        output_file = os.path.join(safe_output_dir, f"{base_name}_Substrate.tif")
+        fill_nodata_fixed_value(os.path.join(safe_output_dir, subs_file), output_file, fill_value_subs)
+        subs_file = output_file
+
+    if bathy_file:
+        base_name = bathy_file.replace("_Bathy.tif", "")
+        output_file = os.path.join(safe_output_dir, f"{base_name}_Bathymetry.tif")
+        fill_nodata_fixed_value(os.path.join(safe_output_dir, bathy_file), output_file, fill_value_bathy)
+        bathy_file = output_file
+
+    return subs_file, bathy_file
+
+
+
+
+
 
 
 
@@ -1034,16 +1272,41 @@ class DatasetInference(SatelliteDataset):
 # dataset.save_output(predictions, output_path)
 
 
-def classify(input_dir, output_filename, mean_per_channel, std_per_channel):
+def segment(input_dir, output_filename, mean_per_channel, std_per_channel): 
     """
     Perform semantic segmentation inference on a Sentinel-2 scene using a preloaded model.
     
     Parameters:
-    - input_dir: directory containing the expected input TIFF files
+    - input_dir: path to a .SAFE folder OR directory containing the expected input TIFF files
     - output_filename: output TIFF filename to save prediction
     - mean_per_channel, std_per_channel: normalization stats used during training
     """
-    # Use existing model, dataset class, and logic
+
+    # --- Preprocessing if input_dir is a SAFE folder ---
+    if input_dir.endswith(".SAFE") and os.path.isdir(input_dir):
+        safe_basename = os.path.basename(input_dir).replace(".SAFE", "")
+        parent_dir = os.path.dirname(input_dir)
+        output_folder = os.path.join(parent_dir, safe_basename)
+        os.makedirs(output_folder, exist_ok=True)
+
+        # Step 1: Extract S2 bands
+        b2348_file, b5678a1112_file = extract_bands_to_geotiffs(input_dir, output_folder)
+        if not b2348_file:
+            raise RuntimeError(f"Failed to extract bands for {input_dir}")
+
+        # Step 2: Warp bathymetry + substrate
+        warp_bathy_and_subs(parent_dir)
+
+        # Step 3: Merge substrate rasters
+        merge_substrate_files_single(output_folder)
+
+        # Step 4: Fill nodata
+        apply_fill_nodata_single(output_folder)
+
+        # Update input_dir to point to preprocessed folder
+        input_dir = output_folder
+
+    # --- Original classification logic ---
     data = SatelliteDataset(image_paths=None, mask_paths=None, augmentation=None, classes=["kelp"])
     dataset = DatasetInference(
         main_directory=input_dir,

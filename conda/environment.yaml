@@ -1,6 +1,7 @@
 name: skema_env
 channels:
   - conda-forge
+  - pytorch
   - defaults
 dependencies:
   - python>=3.8,<3.11
@@ -8,17 +9,18 @@ dependencies:
   - numpy=1.26.4
   - pandas=2.2.3
   - scikit-learn=1.3.2
-  - scipy=1.11.4
+  - scipy=1.11.4  # Optional, remove if not needed
   - matplotlib=3.7.5
   - tifffile=2023.4.12
-  - rasterio=1.4.3
-  - tqdm=4.67.1
-  - click=8.2.0
+  - rasterio=1.3.11  # Updated to latest in >=1.3,<2 range on conda-forge
+  - gdal=3.6.4  # Matches >=3.6,<3.8
+  - tqdm=4.66.5  # Latest in >=4.66,<5 range on conda-forge
+  - click=8.1.7  # Latest in >=8.1,<9 range on conda-forge
+  - albumentations=1.4.24
+  - torch=2.4.1  # Latest in >=2.1,<3 range on pytorch channel
+  - torchvision=0.19.1  # Latest in >=0.16,<1 range on pytorch channel
   - pip:
-      - torch==2.7.0
-      - torchvision==0.22.0
-      - pytorch-lightning==2.5.1.post0
+      - pytorch-lightning==2.5.1.post0  # Matches >=2.1,<3, not reliably available on conda-forge
       - segmentation-models-pytorch==0.5.0
       - torchmetrics==1.7.1
-      - albumentations==1.4.24
-      - skema @ file:///C:/skema/dist/skema-0.1.0-py3-none-any.whl  # if installing from local wheel
+      - skema @ file:///C:/skema/dist/skema-0.1.0-py3-none-any.whl
