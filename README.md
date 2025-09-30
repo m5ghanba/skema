@@ -106,6 +106,29 @@ pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https
 
 Skip this step if you don’t have a GPU.
 
+
+### ⚠️ GDAL Installation Issue on Windows
+
+If you encounter an error when installing `gdal` after running:
+
+```bash
+pip install --force-reinstall dist/skema-0.1.0-py3-none-any.whl
+```
+
+it is recommended to install GDAL using a **precompiled wheel** from:
+
+👉 [https://github.com/cgohlke/geospatial-wheels/releases](https://github.com/cgohlke/geospatial-wheels/releases)
+
+#### 🪟 For Windows Users:
+
+1. Visit the link above.
+2. Under the **Assets** section of the desired release (e.g., `v2023.9.30`), download the appropriate wheel for your Python version. For example, if you're using **Python 3.9 on 64-bit Windows**, download: GDAL-3.7.2-cp39-cp39-win_amd64.whl. 
+3. Install it using pip:
+
+```bash
+pip install path/to/GDAL-3.7.2-cp39-cp39-win_amd64.whl
+```
+
 ---
 
 ## 🛰️ Usage
@@ -118,7 +141,7 @@ skema --input-dir path/to/sentinel2/safe/folder --output-filename output.tif
 
 - The first path (`--input-dir`) must be the full path to the `.SAFE` folder.  
   - Sentinel-2 images from the Copernicus Browser come as `.zip` files. Extract them first.  
-  - Then, pass the full path to the `.SAFE` folder (e.g., `C:\\...\\S2C_MSIL2A_20250715T194921_N0511_R085_T09UUU_20250716T001356.SAFE`).  
+  - Then, pass the full path to the `.SAFE` folder (e.g., `C:\...\S2C_MSIL2A_20250715T194921_N0511_R085_T09UUU_20250716T001356.SAFE`).  
 
 - The second parameter (`--output-filename`) is the name of the output file (e.g., `output.tif`).  
 
