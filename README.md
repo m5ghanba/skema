@@ -18,7 +18,7 @@ To do this, open your **terminal**:
 When you open a terminal, you start inside a **directory (folder)**. You can move to another directory with the command `cd`. For example:  
 
 ```bash  
-cd C:\\Users\\YourName\\Documents  
+cd C:\Users\YourName\Documents  
 ``` 
 
 On macOS/Linux:  
@@ -34,7 +34,7 @@ Now, navigate to a directory where you want to download the SkeMa installation f
 
 ```bash  
 python -m venv skema_env  
-skema_env\\Scripts\\activate  # On Windows  
+skema_env\Scripts\activate  # On Windows  
 # or  
 source skema_env/bin/activate  # On macOS/Linux  
 
