@@ -10,7 +10,7 @@
 
 Before you can set up SkeMa, you'll need **Python** (version 3.8 or higher) and **Git** installed on your computer. These are free tools—no accounts or sign-ups are required to install them or to clone the repository from GitHub later. We'll install them using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps.
 
-### Step 0: Install Prerequisites (Python and Git)
+### Step 1: Install Prerequisites (Python and Git)
 
 #### On Windows
 1. **Check if Winget is available** (it's built into Windows 10 version 2009 or later, or Windows 11—most modern systems have it):
@@ -97,6 +97,7 @@ Before you can set up SkeMa, you'll need **Python** (version 3.8 or higher) and 
 
 Once Python and Git are installed and verified, proceed to the next section. If you encounter errors (e.g., "command not found"), search online for the exact error message + your OS.
 
+### Step 2: Install SkeMa
 We recommend creating a **virtual environment**. A virtual environment is like a clean sandbox that keeps all the Python packages for this project separate from your system-wide Python installation.
 
 To do this, open your **terminal**:  
@@ -133,7 +134,7 @@ git clone https://github.com/m5ghanba/skema.git
 
 This will clone the repository into a new folder named `skema` in your current working directory. 
 
-### Static files  
+#### Static files  
 There are necessary **static files** that need to be downloaded and placed inside. These are bathymetry and substrate files from the whole coast of British Columbia that `skema` uses when predicting kelp on a Sentinel-2 image.  
 
 - The bathymetry file is a single TIFF raster (`Bathymetry_10m.tif`).  
@@ -173,7 +174,7 @@ Each line:
 
 ---
 
-### GPU support  
+#### GPU support  
 
 For GPU users, install CUDA-supported PyTorch that matches your CUDA Toolkit. Check your CUDA version with:  
 
@@ -196,7 +197,7 @@ pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https
 Skip this step if you don’t have a GPU.
 
 
-### ⚠️ GDAL Installation Issue on Windows
+#### ⚠️ GDAL Installation Issue on Windows
 
 If you encounter an error when installing `gdal` after running:
 
@@ -208,7 +209,7 @@ it is recommended to install GDAL using a **precompiled wheel** from:
 
 👉 [https://github.com/cgohlke/geospatial-wheels/releases](https://github.com/cgohlke/geospatial-wheels/releases)
 
-#### 🪟 For Windows Users:
+##### 🪟 For Windows Users:
 
 1. Visit the link above.
 2. Under the **Assets** section of the desired release (e.g., `v2023.9.30`), download the appropriate wheel for your Python version. For example, if you're using **Python 3.9 on 64-bit Windows**, download: GDAL-3.7.2-cp39-cp39-win_amd64.whl. 
