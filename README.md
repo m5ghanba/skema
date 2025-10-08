@@ -1,4 +1,4 @@
-# SkeMa
+# SKeMa
 
 **Satellite-based Kelp Mapping using Semantic Segmentation on Sentinel-2 imagery**
 
@@ -8,7 +8,7 @@
 
 ## 🚀 Installation
 
-Before you can set up SkeMa, you'll need **Python** (version 3.8 or higher) and **Git** installed on your computer. These are free tools—no accounts or sign-ups are required to install them or to clone the repository from GitHub later. We'll install them using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps.
+Before you can set up SKeMa, you'll need **Python** (version 3.8 or higher) and **Git** installed on your computer. These are free tools—no accounts or sign-ups are required to install them or to clone the repository from GitHub later. We'll install them using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps.
 
 ### Step 1: Install Prerequisites (Python and Git)
 
@@ -97,7 +97,7 @@ Before you can set up SkeMa, you'll need **Python** (version 3.8 or higher) and 
 
 Once Python and Git are installed and verified, proceed to the next section. If you encounter errors (e.g., "command not found"), search online for the exact error message + your OS.
 
-### Step 2: Install SkeMa
+### Step 2: Install SKeMa
 We recommend creating a **virtual environment**. A virtual environment is like a clean sandbox that keeps all the Python packages for this project separate from your system-wide Python installation.
 
 To do this, open your **terminal**:  
@@ -119,7 +119,7 @@ cd /Users/yourname/Documents
 
 👉 The easiest way to navigate is to open your file explorer, go to the folder you want, then copy its full path and paste it after `cd` on the command line. For more details, look up "basic terminal navigation" online.  
 
-Now, navigate to a directory where you want to download the SkeMa installation files, then run:
+Now, navigate to a directory where you want to download the SKeMa installation files, then run:
 
 ```  
 python -m venv skema_env  
@@ -132,7 +132,10 @@ source skema_env/bin/activate
 git clone https://github.com/m5ghanba/skema.git  
 ```  
 
-This will clone the repository into a new folder named `skema` in your current working directory. 
+Each line:  
+- `python -m venv skema_env`: Creates a virtual environment named `skema_env` to isolate project dependencies.  
+- `skema_env\Scripts\activate` (Windows) or `source skema_env/bin/activate` (macOS/Linux): Activates the virtual environment, ensuring subsequent commands use its isolated Python and packages.  
+- `git clone https://github.com/m5ghanba/skema.git`: Downloads the SKeMa repository from GitHub into a new folder named `skema` in your current directory. The working directory is the folder your terminal is currently operating in, which you can check by running `pwd` (macOS/Linux) or `cd` (Windows).
 
 #### Static files  
 There are necessary **static files** that need to be downloaded and placed inside. These are bathymetry and substrate files from the whole coast of British Columbia that `skema` uses when predicting kelp on a Sentinel-2 image.  
@@ -154,22 +157,22 @@ skema/skema/static/bathy_substrate/
   https://osdp-psdo.canada.ca/dp/en/search/metadata/NRCAN-FGP-1-b100cf6c-7818-4748-9960-9eab2aa6a7a0  
 
 
-Now, install SkeMa:  
+Now, install SKeMa:  
 
 ```bash  
 cd skema                   # Move into the repository folder  
 pip install build          # Install build tool  
 python -m build            # Build the package into a wheel file  
 pip install --upgrade pip setuptools wheel  # Update packaging tools  
-pip install --force-reinstall dist/skema-0.1.0-py3-none-any.whl  # Install SkeMa  
+pip install --force-reinstall dist/skema-0.1.0-py3-none-any.whl  # Install SKeMa  
 ``` 
 
 Each line:  
-- `cd skema`: changes into the SkeMa project folder.  
+- `cd skema`: changes into the SKeMa project folder.  
 - `pip install build`: installs Python’s build helper.  
 - `python -m build`: creates a Python package distribution.  
 - `pip install --upgrade ...`: ensures packaging tools are up to date.  
-- `pip install --force-reinstall ...`: installs the SkeMa wheel file you just built.  
+- `pip install --force-reinstall ...`: installs the SKeMa wheel file you just built.  
 
 #### GPU support  
 
@@ -220,12 +223,12 @@ pip install path/to/GDAL-3.7.2-cp39-cp39-win_amd64.whl
 
 ## 🛰️ Usage
 
-SkeMa uses Sentinel-2 satellite images, which can be downloaded from the [Copernicus Browser](https://dataspace.copernicus.eu/browser/). To access these images, you need to create a free account on the Copernicus Data Space website:
+SKeMa uses Sentinel-2 satellite images, which can be downloaded from the [Copernicus Browser](https://dataspace.copernicus.eu/browser/). To access these images, you need to create a free account on the Copernicus Data Space website:
 - Visit [https://dataspace.copernicus.eu/](https://dataspace.copernicus.eu/) and click "Sign Up" to create an account.
 - Follow the instructions to register with your email and set a password.
 - Once logged in, use the Copernicus Browser to search for and download Sentinel-2 images, which will be provided as `.zip` files.
 
-Now, you can run skema on a new Sentinel-2 image:
+Now, you can run SKeMa on a new Sentinel-2 image:
 
 ```bash  
 skema --input-dir path/to/sentinel2/safe/folder --output-filename output.tif  
