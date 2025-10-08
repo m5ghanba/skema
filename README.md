@@ -153,7 +153,6 @@ skema/skema/static/bathy_substrate/
 - Shallow substrate model (20m) of the Pacific Canadian coast (Haggarty et al., 2020):  
   https://osdp-psdo.canada.ca/dp/en/search/metadata/NRCAN-FGP-1-b100cf6c-7818-4748-9960-9eab2aa6a7a0  
 
----
 
 Now, install SkeMa:  
 
@@ -171,8 +170,6 @@ Each line:
 - `python -m build`: creates a Python package distribution.  
 - `pip install --upgrade ...`: ensures packaging tools are up to date.  
 - `pip install --force-reinstall ...`: installs the SkeMa wheel file you just built.  
-
----
 
 #### GPU support  
 
