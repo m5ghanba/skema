@@ -685,43 +685,35 @@ class segModel(pl.LightningModule):
         return
 
 
-# https://smp.readthedocs.io/en/latest/models.html#upernet     encoders: https://smp.readthedocs.io/en/latest/encoders.html
-model = segModel("Unet", "tu-maxvit_tiny_tf_512", in_channels=12, out_classes=OUT_CLASSES)#decoder_channels=(512, 256, 128, 64), encoder_depth=4,  resnet18
-
-# # Load the full Lightning checkpoint
-# model = segModel(model_name, encoder_name, in_channels=8, out_classes=OUT_CLASSES)
-# model = model.load_from_checkpoint(os.path.join(save_dir, checkpoint_filename))
-
-# Load only the state dict
-
-# save_dir = "C:/Users/mohsenghanbari/saved_models/DataNoError1percent10and20mbandsPlusSubstrateAndBathy/NewResults" #"C:/Users/mohsenghanbari/saved_models/AnnotatedData/uploaded to git"  #"C:/Users/mohsenghanbari/saved_models/DataNoError1percent10and20mbandsPlusSubstrateAndBathy/NewResults"
-# state_dict_filename = "NormalizedInput_NoAugmentation_WithSubstrate_WithBathy_WithIndices_WithB5andNDVIRE_Unet_resnet18_20250416_191617.pth" #"model.pth" #"NormalizedInput_NoAugmentation_WithSubstrate_WithBathy_WithIndices_WithB5andNDVIRE_Unet_resnet18_20250416_191617.pth"
-# model.load_state_dict(torch.load(os.path.join(save_dir, state_dict_filename)))
-
-
-
-# instead load it from github 
-import torch
-import os
-import urllib.request
-
-def download_model(url, destination):
-    print(f"Downloading model from {url}...")
-    urllib.request.urlretrieve(url, destination)
-    print("Download complete.")
-    return destination
-
-MODEL_URL = "https://github.com/m5ghanba/skema/releases/download/v0.1.0-alpha/model.pth"
-LOCAL_PATH = os.path.join(os.path.expanduser("~"), ".skema", "model.pth")
-
-# Ensure directory exists
-os.makedirs(os.path.dirname(LOCAL_PATH), exist_ok=True)
-
-# Download if not exists
-model_path = download_model(MODEL_URL, LOCAL_PATH)
-
-# Load model
-model.load_state_dict(torch.load(model_path, map_location="cpu"))
+def load_model(model_type='model_full'):
+    """Load the appropriate model based on model_type."""
+    if model_type == 'model_full':
+        in_channels = 12
+        MODEL_URL = "https://github.com/m5ghanba/skema/releases/download/v0.1.0-alpha/model.pth"
+        model_filename = "model.pth"
+    elif model_type == 'model_s2bandsandindices_only':
+        in_channels = 10
+        MODEL_URL = "https://github.com/m5ghanba/skema/releases/download/v0.1.0-alpha/modelS2Only.pth"
+        model_filename = "modelS2Only.pth"
+    else:
+        raise ValueError(f"Invalid model_type '{model_type}'")
+    
+    # Create model
+    model = segModel("Unet", "tu-maxvit_tiny_tf_512", in_channels=in_channels, out_classes=OUT_CLASSES)
+    
+    # Download model if needed
+    LOCAL_PATH = os.path.join(os.path.expanduser("~"), ".skema", model_filename)
+    os.makedirs(os.path.dirname(LOCAL_PATH), exist_ok=True)
+    
+    if not os.path.exists(LOCAL_PATH):
+        print(f"Downloading model from {MODEL_URL}...")
+        urllib.request.urlretrieve(MODEL_URL, LOCAL_PATH)
+        print("Download complete.")
+    
+    # Load weights
+    model.load_state_dict(torch.load(LOCAL_PATH, map_location="cpu"))
+    
+    return model
 
 
 
@@ -783,148 +775,113 @@ def create_weight_map(tile_size, halo_size):
 # probabilities ≤ 0.5 to 0)
 # This gives us the weighted average of all predictions that contributed to each pixel
 class DatasetInference(SatelliteDataset):
-    def __init__(self, main_directory, model, dataset, tile_size=512, overlap=0.7, mean_per_channel=None, std_per_channel=None, halo_size=64, padding_mode='reflect'):
+    def __init__(self, main_directory, model, dataset, model_type='model_full', tile_size=512, 
+                 overlap=0.7, mean_per_channel=None, std_per_channel=None, halo_size=64, padding_mode='reflect'):
+        
+        # Validate model_type
+        if model_type not in ['model_full', 'model_s2bandsandindices_only']:
+            raise ValueError(f"Invalid model_type '{model_type}'. Must be 'model_full' or 'model_s2bandsandindices_only'.")
+        
         self.main_directory = main_directory
         self.tile_size = tile_size
         self.overlap = overlap
-        self.model = model.to(DEVICE)  # The trained model
+        self.model = model.to(DEVICE)
+        self.model_type = model_type
         self.mean_per_channel = mean_per_channel
         self.std_per_channel = std_per_channel
         self.halo_size = halo_size
-        self.padding_mode = padding_mode  # 'reflect', 'edge', 'constant', or 'symmetric'
-
-        # Create weight map for weighted averaging
+        self.padding_mode = padding_mode
+        self.dataset = dataset
+        
         self.weight_map = create_weight_map(tile_size, halo_size)
-
-        # Get the four required file paths
-        self.image_path1, self.image_path2, self.substrate_path, self.bathymetry_path = self.get_file_paths(main_directory)
-
-        # Load the image and process it
+        
+        # Get file paths based on model type
+        if self.model_type == 'model_full':
+            self.image_path1, self.image_path2, self.substrate_path, self.bathymetry_path = self.get_file_paths(main_directory)
+        else:  # model_s2bandsandindices_only
+            self.image_path1, self.image_path2 = self.get_file_paths(main_directory)
+        
+        # Load and process image
         self.image, self.metadata = self.load_image()
 
-        # Calculate indices using methods from the dataset class
-        self.calculate_and_concat_indices(dataset)
-
-
     def get_file_paths(self, main_directory):
-        """Retrieve the four file paths from the directory."""
-        file_patterns = ["*_B2B3B4B8.tif", "*_B5B6B7B8A_B11B12.tif", "*_Substrate.tif", "*_Bathymetry.tif"]
+        """Retrieve file paths based on model type."""
+        if self.model_type == 'model_full':
+            file_patterns = ["*_B2B3B4B8.tif", "*_B5B6B7B8A_B11B12.tif", "*_Substrate.tif", "*_Bathymetry.tif"]
+        else:  # model_s2bandsandindices_only
+            file_patterns = ["*_B2B3B4B8.tif", "*_B5B6B7B8A_B11B12.tif"]
+        
         file_paths = []
-
         for pattern in file_patterns:
             matching_files = glob.glob(os.path.join(main_directory, pattern))
             if len(matching_files) != 1:
                 raise ValueError(f"Expected one file for pattern {pattern}, found {len(matching_files)}.")
             file_paths.append(matching_files[0])
-
-        return file_paths  # Returns four paths in order
+        
+        return tuple(file_paths)
 
     def load_image(self):
-        """Load all image bands from the four source files (10m bands)."""
-
-        # Load 10m bands (B2, B3, B4, B8)
+        """Load all image bands and compute indices directly into self.image."""
+        # Load 10m bands
         with rasterio.open(self.image_path1) as src1:
-            image1 = src1.read([1, 2, 3, 4])  # Read bands at 10m resolution
-            image1 = np.transpose(image1, (1, 2, 0)).astype(np.float32)  # Shape (H, W, 4)
-            metadata = src1.meta  # Save metadata for later use
-
-        # Load 20m bands (B5, B6, B7, B8A, B11, B12)
+            image1 = src1.read([1, 2, 3, 4])
+            image1 = np.transpose(image1, (1, 2, 0)).astype(np.float32)
+            metadata = src1.meta
+        
+        # Load 20m band
         with rasterio.open(self.image_path2) as src2:
-            #rasterio.open().read() function accepts the indexes parameter to specify which bands to read from a
-            # multi-band raster. This parameter allows you to select specific bands by providing their indices. In Rasterio, band indices start at 1
-            # If you want bands 5, 6, 7, and 8a, for example, you should write src2.read(indexes=[1], out_shape=(1, image1.shape[0], image1.shape[1],
-            # resampling=Resampling.nearest)
             image2 = src2.read(indexes=[1], out_shape=(
-                1,  # change this and indexes based on the bands included in the training. Only band B5 (red edge), which is band index 1, was used.
-                image1.shape[0],  # Match height of 10m bands
-                image1.shape[1]    # Match width of 10m bands
-            ), resampling=Resampling.nearest)  # Upsample using nearest neighbor
-            image2 = np.transpose(image2, (1, 2, 0)).astype(np.float32)  # Shape (H, W, 1)
-
-        # Load Substrate data
-        with rasterio.open(self.substrate_path) as src3:
-            substrate = src3.read(1).astype(np.float32)  # Shape (H, W)
-            substrate = substrate[:, :, np.newaxis]  # Expand to (H, W, 1)
-
-        # Load Bathymetry data
-        with rasterio.open(self.bathymetry_path) as src4:
-            bathymetry = src4.read(1).astype(np.float32)  # Shape (H, W)
-            bathymetry = bathymetry[:, :, np.newaxis]  # Expand to (H, W, 1)
-
-        # Merge all bands together
-        self.image = np.concatenate((image1, image2, substrate, bathymetry), axis=-1)  # Shape (H, W, 7)
-
+                1, image1.shape[0], image1.shape[1]
+            ), resampling=Resampling.nearest)
+            image2 = np.transpose(image2, (1, 2, 0)).astype(np.float32)
+        
+        if self.model_type == 'model_full':
+            # Load substrate and bathymetry
+            with rasterio.open(self.substrate_path) as src3:
+                substrate = src3.read(1).astype(np.float32)[:, :, np.newaxis]
+            
+            with rasterio.open(self.bathymetry_path) as src4:
+                bathymetry = src4.read(1).astype(np.float32)[:, :, np.newaxis]
+            
+            # Allocate image array with 12 channels (7 base + 5 indices)
+            self.image = np.empty((image1.shape[0], image1.shape[1], 12), dtype=np.float32)
+            self.image[:, :, 0:4] = image1
+            self.image[:, :, 4] = image2[:, :, 0]
+            self.image[:, :, 5] = substrate[:, :, 0]
+            self.image[:, :, 6] = bathymetry[:, :, 0]
+        else:  # model_s2bandsandindices_only
+            # Allocate image array with 10 channels (5 base + 5 indices)
+            self.image = np.empty((image1.shape[0], image1.shape[1], 10), dtype=np.float32)
+            self.image[:, :, 0:4] = image1
+            self.image[:, :, 4] = image2[:, :, 0]
+        
+        # Compute indices directly into self.image
+        self._compute_all_indices()
+        
         return self.image, metadata
 
-    def calculate_and_concat_indices(self, dataset):
-        """Calculate indices using methods from the dataset class."""
-        # Include all the indices that were used in the training.
-        ndvi = dataset.calculate_ndvi(self.image)
-        ndwi = dataset.calculate_ndwi(self.image)
-        gndvi = dataset.calculate_gndvi(self.image)
-        chlorophyll_index = dataset.calculate_chlorophyll_index_green(self.image)
-        ndvire = dataset.calculate_ndvi_re(self.image) #Normalized Difference of Red and Blue
-        # ndreb = dataset.calculate_ndreb(self.image)
-        # blue_red = dataset.calculate_blue_red(self.image)
-        # tvi = dataset.calculate_tvi(self.image)
-        # rdvi = dataset.calculate_rdvi(self.image)
-        # ndreb = dataset.calculate_ndreb(self.image)
-        # cig = dataset.calculate_cig(self.image)
-        # blue_rededge = dataset.calculate_blue_rededge(self.image)
-        # blue_nir = dataset.calculate_blue_nir(self.image)
-        # red_minus_blue = dataset.calculate_red_minus_blue(self.image)
-        # bndvi = dataset.calculate_bndvi(self.image)
-
-
-        #ndrb = dataset.calculate_ndrb(self.image), #Normalized Difference of Red and Blue
-        #mgvi = dataset.calculate_mgvi(self.image), #Modified Green Red Vegetation Index (MGVI)
-        #mpri = dataset.calculate_mpri(self.image), #Modified Photochemical Reflectance Index (MPRI)
-        #rgbvi = dataset.calculate_rgbvi(self.image), #Red Green Blue Vegetation Index (RGBVI)
-        #gli = dataset.calculate_gli(self.image), #Green Leaf Index (GLI)
-        #gi = dataset.calculate_gi(self.image), #Greenness Index (GI)
-        #br = dataset.calculate_blue_red(self.image), #Blue/Red
-        #exg = dataset.calculate_exg(self.image), #Excess of Green (ExG)
-        #vari = dataset.calculate_vari(self.image), #Visible Atmospherically Resistant Index (VARI)
-        #evi = dataset.calculate_evi(self.image), #Enhanced Vegetation Index (EVI)
-
-
-        # Concatenate indices to the original image along the band dimension
-        self.image = np.concatenate((self.image, ndvi[..., np.newaxis], ndwi[..., np.newaxis],
-                                         gndvi[..., np.newaxis], chlorophyll_index[..., np.newaxis], ndvire[..., np.newaxis]), axis=-1) # ,
-                                         # ndvire[..., np.newaxis], ndreb[..., np.newaxis], blue_red[..., np.newaxis], tvi[..., np.newaxis],
-                                         # rdvi[..., np.newaxis], ndreb[..., np.newaxis], cig[..., np.newaxis],
-                                         # blue_rededge[..., np.newaxis], blue_nir[..., np.newaxis],
-                                         # red_minus_blue[..., np.newaxis], bndvi[..., np.newaxis]
-        self.image = self.image[..., [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]]  # selection based on what the model is trained on (attention: zero-based)
-
-        # import matplotlib.pyplot as plt
-        # # Plot the extracted channel
-        # plt.figure(figsize=(8, 6))
-        # plt.imshow(self.image[:,:,5])  # 'viridis' is just an example colormap
-        # # plt.colorbar()  # Optional: to display a color scale
-        # plt.title('bathy Image before')
-        # plt.show()
-
-        # # ***********Remove this:
-        # self.image[:,:,4][self.image[:,:,4] > 10] = -2000
-        # self.image[:,:,4][self.image[:,:,4] < -100] = -2000
-
-
-        # # ***********Remove this:
-        # self.image[:,:,4][self.image[:,:,4] != 1] = 0
-
-
-        # Assuming `self.image` has been set as per the code you provided
-
-        # Extract the 6th channel (0-based index 5)
-        # channel_5 = self.image[:,:,5]
-
-        # # Plot the extracted channel
-        # plt.figure(figsize=(8, 6))
-        # plt.imshow(channel_5)  # 'viridis' is just an example colormap
-        # # plt.colorbar()  # Optional: to display a color scale
-        # plt.title('bathy Image after')
-        # plt.show()
+    def _compute_all_indices(self):
+        """Compute all spectral indices directly into self.image."""
+        green = self.image[:, :, 1]
+        red = self.image[:, :, 2]
+        nir = self.image[:, :, 3]
+        re = self.image[:, :, 4]
+        eps = 1e-10
+        
+        if self.model_type == 'model_full':
+            # Indices start at channel 7
+            self.image[:, :, 7] = (nir - red) / (nir + red + eps)  # NDVI
+            self.image[:, :, 8] = (green - nir) / (green + nir + eps)  # NDWI
+            self.image[:, :, 9] = (nir - green) / (nir + green + eps)  # GNDVI
+            self.image[:, :, 10] = (nir / (green + eps)) - 1  # Chlorophyll Index
+            self.image[:, :, 11] = (re - red) / (re + red + eps)  # NDVI-RE
+        else:  # model_s2bandsandindices_only
+            # Indices start at channel 5
+            self.image[:, :, 5] = (nir - red) / (nir + red + eps)  # NDVI
+            self.image[:, :, 6] = (green - nir) / (green + nir + eps)  # NDWI
+            self.image[:, :, 7] = (nir - green) / (nir + green + eps)  # GNDVI
+            self.image[:, :, 8] = (nir / (green + eps)) - 1  # Chlorophyll Index
+            self.image[:, :, 9] = (re - red) / (re + red + eps)  # NDVI-RE
 
     def generate_tiles(self, image):
         """Generator that yields one tile and its coordinates at a time."""
@@ -1080,7 +1037,7 @@ class DatasetInference(SatelliteDataset):
     
         return count
 
-    def _process_batch(self, tiles, coords, predictions):
+    def _process_batch_not_weighted(self, tiles, coords, predictions):
         """Not weighted - Run inference on a batch of tiles and write results into full image."""
         batch_tensor = torch.cat(tiles, dim=0).to(DEVICE)  # shape: (B, C, H, W)
         outputs = self.model(batch_tensor)  # shape: (B, 1, H, W) or (B, H, W)
@@ -1101,7 +1058,7 @@ class DatasetInference(SatelliteDataset):
                 pred[:effective_tile_height, :effective_tile_width]
             )
 
-    def _process_batch_weighted_averaging(self, tiles, coords, predictions, weight_accumulator):
+    def _process_batch(self, tiles, coords, predictions, weight_accumulator):
         """Process batch using weighted averaging with halo method."""
         batch_tensor = torch.cat(tiles, dim=0).to(DEVICE)
         outputs = self.model(batch_tensor)
@@ -1160,14 +1117,14 @@ class DatasetInference(SatelliteDataset):
                 # Run batch when full
                 if len(batch_tiles) == batch_size:
 
-                    self._process_batch_weighted_averaging(batch_tiles, batch_coords, predictions, weight_accumulator)
+                    self._process_batch(batch_tiles, batch_coords, predictions, weight_accumulator)
 
                     batch_tiles.clear()
                     batch_coords.clear()
     
             # Handle remaining tiles
             if batch_tiles:
-                self._process_batch_weighted_averaging(batch_tiles, batch_coords, predictions, weight_accumulator)
+                self._process_batch(batch_tiles, batch_coords, predictions, weight_accumulator)
     
         # Finalize predictions
 
@@ -1210,13 +1167,13 @@ class DatasetInference(SatelliteDataset):
     
                 # Run batch when full
                 if len(batch_tiles) == batch_size:
-                    self._process_batch(batch_tiles, batch_coords, predictions)
+                    self._process_batch_not_weighted(batch_tiles, batch_coords, predictions)
                     batch_tiles.clear()
                     batch_coords.clear()
     
             # Handle remaining tiles
             if batch_tiles:
-                self._process_batch(batch_tiles, batch_coords, predictions)
+                self._process_batch_not_weighted(batch_tiles, batch_coords, predictions)
     
         # Optional: visualize the final result
         plt.imshow(predictions, cmap='gray')
@@ -1272,17 +1229,21 @@ class DatasetInference(SatelliteDataset):
 # dataset.save_output(predictions, output_path)
 
 
-def segment(input_dir, output_filename, mean_per_channel, std_per_channel): 
+def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model_type='model_full'): 
     """
-    Perform semantic segmentation inference on a Sentinel-2 scene using a preloaded model.
+    Perform semantic segmentation inference on a Sentinel-2 scene.
     
     Parameters:
     - input_dir: path to a .SAFE folder OR directory containing the expected input TIFF files
     - output_filename: output TIFF filename to save prediction
     - mean_per_channel, std_per_channel: normalization stats used during training
+    - model_type: 'model_full' (with substrate/bathymetry) or 'model_s2bandsandindices_only'
     """
-
-    # --- Preprocessing if input_dir is a SAFE folder ---
+    
+    # Load appropriate model
+    model = load_model(model_type)
+    
+    # Preprocessing if input_dir is a SAFE folder
     if input_dir.endswith(".SAFE") and os.path.isdir(input_dir):
         safe_basename = os.path.basename(input_dir).replace(".SAFE", "")
         parent_dir = os.path.dirname(input_dir)
@@ -1294,32 +1255,29 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel):
         if not b2348_file:
             raise RuntimeError(f"Failed to extract bands for {input_dir}")
 
-        # Step 2: Warp bathymetry + substrate
-        warp_bathy_and_subs(parent_dir)
+        # Steps 2-4: Only for model_full
+        if model_type == 'model_full':
+            warp_bathy_and_subs(parent_dir)
+            merge_substrate_files_single(output_folder)
+            apply_fill_nodata_single(output_folder)
 
-        # Step 3: Merge substrate rasters
-        merge_substrate_files_single(output_folder)
-
-        # Step 4: Fill nodata
-        apply_fill_nodata_single(output_folder)
-
-        # Update input_dir to point to preprocessed folder
         input_dir = output_folder
 
-    # --- Original classification logic ---
+    # Create dataset and run inference
     data = SatelliteDataset(image_paths=None, mask_paths=None, augmentation=None, classes=["kelp"])
     dataset = DatasetInference(
         main_directory=input_dir,
         model=model,
         dataset=data,
+        model_type=model_type,
         mean_per_channel=mean_per_channel,
         std_per_channel=std_per_channel,
         tile_size=512,
         overlap=0.5,  
         halo_size=64,
-        padding_mode='reflect'  # Use reflect padding instead of zero padding
+        padding_mode='reflect'
     )
 
-    predictions = dataset.run_model_on_tiles(batch_size=8)  # run_model_on_tiles for the weighted option and run_model_on_tiles_not_weighted for the not-weighted one
+    predictions = dataset.run_model_on_tiles(batch_size=8)
     output_path = os.path.join(input_dir, output_filename)
     dataset.save_output(predictions, output_path)

@@ -146,10 +146,12 @@ There are necessary **static files** that need to be downloaded and placed insid
 
 ```text  
 skema/skema/static/bathy_substrate/  
-``` 
+```
+
+**⚠️ Note**: Static files (bathymetry and substrate) are only required when using the **full model** (`--model-type model_full`). If you plan to use only the **S2-only model** (`--model-type model_s2bandsandindices_only`), you can skip downloading these files.
 
 **Sources**:  
-- Canada’s DEM/bathymetry model (10m resolution):  
+- Canada's DEM/bathymetry model (10m resolution):  
   - Documentation: https://publications.gc.ca/collections/collection_2023/rncan-nrcan/m183-2/M183-2-8963-eng.pdf  
   - Dataset: https://maps-cartes.services.geo.ca/server_serveur/rest/services/NRCan/canada_west_coast_DEM_en/MapServer  
 
@@ -165,11 +167,11 @@ pip install build          # Install build tool
 python -m build            # Build the package into a wheel file  
 pip install --upgrade pip setuptools wheel  # Update packaging tools  
 pip install --force-reinstall dist/skema-0.1.0-py3-none-any.whl  # Install SKeMa  
-``` 
+```
 
 Each line:  
 - `cd skema`: changes into the SKeMa project folder.  
-- `pip install build`: installs Python’s build helper.  
+- `pip install build`: installs Python's build helper.  
 - `python -m build`: creates a Python package distribution.  
 - `pip install --upgrade ...`: ensures packaging tools are up to date.  
 - `pip install --force-reinstall ...`: installs the SKeMa wheel file you just built.  
@@ -180,21 +182,21 @@ For GPU users, install CUDA-supported PyTorch that matches your CUDA Toolkit. Ch
 
 ```bash  
 nvcc --version  
-``` 
+```
 
 For CUDA 12.1:  
 
 ```bash  
 pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121  
-``` 
+```
 
 For CUDA 11.8:  
 
 ```bash  
 pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118  
-``` 
+```
 
-Skip this step if you don’t have a GPU.
+Skip this step if you don't have a GPU.
 
 
 #### ⚠️ GDAL Installation Issue on Windows
@@ -232,7 +234,7 @@ Now, you can run SKeMa on a new Sentinel-2 image:
 
 ```bash  
 skema --input-dir path/to/sentinel2/safe/folder --output-filename output.tif  
-``` 
+```
 
 - The first path (`--input-dir`) must be the full path to the `.SAFE` folder.  
   - Sentinel-2 images from the Copernicus Browser come as `.zip` files. Extract them first.  
@@ -240,14 +242,41 @@ skema --input-dir path/to/sentinel2/safe/folder --output-filename output.tif
 
 - The second parameter (`--output-filename`) is the name of the output file (e.g., `output.tif`).  
 
-After running, the tool generates a folder with the same name as the `.SAFE` file. Inside this folder, there are **five TIFF files**:  
+### Model Types
 
+SKeMa supports two model types:
+
+1. **`model_full`** (default) — Uses all available data including Sentinel-2 bands, bathymetry, and substrate information. This model provides the most accurate predictions but requires bathymetry and substrate static files.
+
+2. **`model_s2bandsandindices_only`** — Uses only Sentinel-2 bands and derived spectral indices. This model does not require bathymetry or substrate files, making it suitable for areas outside British Columbia or when static files are unavailable.
+
+To specify the model type, use the `--model-type` flag:
+
+```bash
+# Using the full model (default - includes bathymetry and substrate)
+skema --input-dir path/to/sentinel2/safe/folder --output-filename output.tif --model-type model_full
+
+# Using S2-only model (no bathymetry/substrate required)
+skema --input-dir path/to/sentinel2/safe/folder --output-filename output.tif --model-type model_s2bandsandindices_only
+```
+
+If `--model-type` is not specified, the tool defaults to `model_full`.
+
+### Output Files
+
+After running, the tool generates a folder with the same name as the `.SAFE` file. Inside this folder, you'll find:
+
+**For `model_full`:**
 1. **`<SAFE_name>_B2B3B4B8.tif`** — a 10 m resolution, 4-band GeoTIFF containing Sentinel-2 bands B02 (Blue), B03 (Green), B04 (Red), and B08 (Near-Infrared).  
 2. **`<SAFE_name>_B5B6B7B8A_B11B12.tif`** — a 20 m resolution, 6-band GeoTIFF containing Sentinel-2 bands B05, B06, B07, B8A, B11, and B12.  
 3. **`<SAFE_name>_Bathymetry.tif`** — bathymetry data aligned and warped to the Sentinel-2 pixel grid.  
 4. **`<SAFE_name>_Substrate.tif`** — substrate classification data aligned and warped to the Sentinel-2 pixel grid.  
 5. **`output.tif`** (or the filename you specify) — a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.  
 
+**For `model_s2bandsandindices_only`:**
+1. **`<SAFE_name>_B2B3B4B8.tif`** — a 10 m resolution, 4-band GeoTIFF containing Sentinel-2 bands B02 (Blue), B03 (Green), B04 (Red), and B08 (Near-Infrared).  
+2. **`<SAFE_name>_B5B6B7B8A_B11B12.tif`** — a 20 m resolution, 6-band GeoTIFF containing Sentinel-2 bands B05, B06, B07, B8A, B11, and B12.  
+3. **`output.tif`** (or the filename you specify) — a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.
 
 ---
 
@@ -275,7 +304,7 @@ skema/
 ├── setup.py  
 ├── requirements.txt  
 ├── README.md  
-``` 
+```
 
 ---
 
@@ -284,12 +313,10 @@ skema/
 ```bash  
 conda env create -f conda/environment.yml  
 conda activate skema_env  
-``` 
+```
 
 ---
 
 ## 📜 License
 
-MIT License.  
-"""
-
+MIT License.
