@@ -1137,6 +1137,12 @@ class DatasetInference(SatelliteDataset):
             predictions = (predictions > 0.5).astype(np.uint8)
         else:  # Multi-class case
             predictions = np.argmax(predictions, axis=-1).astype(np.uint8)
+
+        # Apply filters for model_full
+        if self.model_type == 'model_full':
+            # Filters: Remove kelp where bathymetry (self.image[:, :, 6]) < -100 or > 20   and where substrate (self.image[:, :, 5]) == 4
+            predictions[(self.image[:, :, 6] < -100) | (self.image[:, :, 6] > 20)] = 0
+            predictions[(self.image[:, :, 5] == 4)] = 0
     
         # Optional: visualize the final result
         plt.figure(figsize=(10, 8))
@@ -1174,6 +1180,12 @@ class DatasetInference(SatelliteDataset):
             # Handle remaining tiles
             if batch_tiles:
                 self._process_batch_not_weighted(batch_tiles, batch_coords, predictions)
+
+        # Apply filters for model_full
+        if self.model_type == 'model_full':
+            # Filters: Remove kelp where bathymetry (self.image[:, :, 6]) < -100 or > 20   and where substrate (self.image[:, :, 5]) == 4
+            predictions[(self.image[:, :, 6] < -100) | (self.image[:, :, 6] > 20)] = 0
+            predictions[(self.image[:, :, 5] == 4)] = 0
     
         # Optional: visualize the final result
         plt.imshow(predictions, cmap='gray')
