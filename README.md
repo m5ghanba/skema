@@ -8,12 +8,12 @@
 
 ## 🚀 Installation
 
-Before you can set up SKeMa, you'll need **Python** (version 3.8 or higher) and **Git** installed on your computer. These are free tools—no accounts or sign-ups are required to install them or to clone the repository from GitHub later. We'll install them using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps.
+Before you can set up SKeMa, you'll need **Python** (version 3.8 or higher) and **Git** installed on your computer. These are free tools, and no accounts or sign-ups are required to install them or to clone the repository from GitHub later. We'll install them using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps.
 
 ### Step 1: Install Prerequisites (Python and Git)
 
 #### On Windows
-1. **Check if Winget is available** (it's built into Windows 10 version 2009 or later, or Windows 11—most modern systems have it):
+1. **Check if Winget is available** (it's built into Windows 10 version 2009 or later, or Windows 11, and most modern systems have it):
    - Open PowerShell or Command Prompt.
    - Type `winget --version` and press Enter.
    - If it shows a version number (e.g., "v1.8.0"), proceed. If not (error like "winget is not recognized"), download the App Installer from the Microsoft Store (search for "App Installer") or update Windows via Settings > Update & Security > Windows Update.
@@ -40,7 +40,7 @@ Before you can set up SKeMa, you'll need **Python** (version 3.8 or higher) and 
    *Alternative if winget fails*: Download the installer from [git-scm.com](https://git-scm.com/download/win) using your browser, run it, and follow the GUI prompts (use defaults). Then verify as above.
 
 #### On macOS
-1. **Install Homebrew** (a package manager for CLI installations—if you don't have it):
+1. **Install Homebrew** (a package manager for CLI installations, if you don't have it):
    - Open Terminal (search for it in Spotlight with Cmd+Space).
    - Run:
      ```
@@ -246,9 +246,9 @@ skema --input-dir path/to/sentinel2/safe/folder --output-filename output.tif
 
 SKeMa supports two model types:
 
-1. **`model_full`** (default) — Uses all available data including Sentinel-2 bands, bathymetry, and substrate information. This model provides the most accurate predictions but requires bathymetry and substrate static files.
+1. **`model_full`** (default): Uses all available data including Sentinel-2 bands, bathymetry, and substrate information. This model provides the most accurate predictions but requires bathymetry and substrate static files.
 
-2. **`model_s2bandsandindices_only`** — Uses only Sentinel-2 bands and derived spectral indices. This model does not require bathymetry or substrate files, making it suitable for areas outside British Columbia or when static files are unavailable.
+2. **`model_s2bandsandindices_only`**: Uses only Sentinel-2 bands and derived spectral indices. This model does not require bathymetry or substrate files, making it suitable for areas outside British Columbia or when static files are unavailable.
 
 To specify the model type, use the `--model-type` flag:
 
@@ -267,16 +267,16 @@ If `--model-type` is not specified, the tool defaults to `model_full`.
 After running, the tool generates a folder with the same name as the `.SAFE` file. Inside this folder, you'll find:
 
 **For `model_full`:**
-1. **`<SAFE_name>_B2B3B4B8.tif`** — a 10 m resolution, 4-band GeoTIFF containing Sentinel-2 bands B02 (Blue), B03 (Green), B04 (Red), and B08 (Near-Infrared).  
-2. **`<SAFE_name>_B5B6B7B8A_B11B12.tif`** — a 20 m resolution, 6-band GeoTIFF containing Sentinel-2 bands B05, B06, B07, B8A, B11, and B12.  
-3. **`<SAFE_name>_Bathymetry.tif`** — bathymetry data aligned and warped to the Sentinel-2 pixel grid.  
-4. **`<SAFE_name>_Substrate.tif`** — substrate classification data aligned and warped to the Sentinel-2 pixel grid.  
-5. **`output.tif`** (or the filename you specify) — a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.  
+1. **`<SAFE_name>_B2B3B4B8.tif`**: a 10 m resolution, 4-band GeoTIFF containing Sentinel-2 bands B02 (Blue), B03 (Green), B04 (Red), and B08 (Near-Infrared).  
+2. **`<SAFE_name>_B5B6B7B8A_B11B12.tif`**: a 20 m resolution, 6-band GeoTIFF containing Sentinel-2 bands B05, B06, B07, B8A, B11, and B12.  
+3. **`<SAFE_name>_Bathymetry.tif`**: bathymetry data aligned and warped to the Sentinel-2 pixel grid.  
+4. **`<SAFE_name>_Substrate.tif`**: substrate classification data aligned and warped to the Sentinel-2 pixel grid.  
+5. **`output.tif`** (or the filename you specify): a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.  
 
 **For `model_s2bandsandindices_only`:**
-1. **`<SAFE_name>_B2B3B4B8.tif`** — a 10 m resolution, 4-band GeoTIFF containing Sentinel-2 bands B02 (Blue), B03 (Green), B04 (Red), and B08 (Near-Infrared).  
-2. **`<SAFE_name>_B5B6B7B8A_B11B12.tif`** — a 20 m resolution, 6-band GeoTIFF containing Sentinel-2 bands B05, B06, B07, B8A, B11, and B12.  
-3. **`output.tif`** (or the filename you specify) — a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.
+1. **`<SAFE_name>_B2B3B4B8.tif`**: a 10 m resolution, 4-band GeoTIFF containing Sentinel-2 bands B02 (Blue), B03 (Green), B04 (Red), and B08 (Near-Infrared).  
+2. **`<SAFE_name>_B5B6B7B8A_B11B12.tif`**: a 20 m resolution, 6-band GeoTIFF containing Sentinel-2 bands B05, B06, B07, B8A, B11, and B12.  
+3. **`output.tif`** (or the filename you specify): a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.
 
 ---
 
