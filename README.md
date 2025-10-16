@@ -161,20 +161,21 @@ skema/skema/static/bathy_substrate/
 
 Now, install SKeMa:  
 
-```bash  
-cd skema                   # Move into the repository folder  
-pip install build          # Install build tool  
-python -m build            # Build the package into a wheel file  
-pip install --upgrade pip setuptools wheel  # Update packaging tools  
-pip install --force-reinstall dist/skema-0.1.0-py3-none-any.whl  # Install SKeMa  
+```bash
+cd skema
+pip install .
 ```
 
-Each line:  
-- `cd skema`: changes into the SKeMa project folder.  
-- `pip install build`: installs Python's build helper.  
-- `python -m build`: creates a Python package distribution.  
-- `pip install --upgrade ...`: ensures packaging tools are up to date.  
-- `pip install --force-reinstall ...`: installs the SKeMa wheel file you just built.  
+Each line:
+- `cd skema`: moves into the SKeMa project folder.
+- `pip install .`: installs the package and all its dependencies, and makes the skema command available.
+
+If you encounter packaging errors, make sure your pip and build tools are up to date:
+
+```bash
+pip install --upgrade pip setuptools wheel
+```
+
 
 #### GPU support  
 
