@@ -2,7 +2,7 @@
 
 **Satellite-based Kelp Mapping using Semantic Segmentation on Sentinel-2 imagery**
 
-`skema` is a Python tool for classifying kelp in Sentinel-2 satellite images using a deep learning segmentation model (PyTorch). It provides a command-line interface (CLI) for easy, reproducible inference. The following instructions are provided for anyone with no knowledge of what a command line is, no knowledge of Python or virtual environments, etc. Just follow along step by step.
+skema is a Python tool for classifying kelp in Sentinel-2 satellite images using a deep learning segmentation model (PyTorch). It provides a command-line interface (CLI) for easy, reproducible inference. To run the tool you would need to download Sentinel-2 images from the Copernicus Browser. More detailed instruction on how to download these images can be found in Section Usage. The following instructions are provided for anyone with no knowledge of what a command line is, no knowledge of Python or virtual environments, etc. Just follow along step by step.
 
 ---
 
@@ -224,6 +224,14 @@ pip install path/to/GDAL-3.7.2-cp39-cp39-win_amd64.whl
 ---
 
 ## 🛰️ Usage
+
+To use SKeMa after the initial installation, you must activate its virtual environment each time you start a new session. Navigate to the directory where you downloaded the SKeMa installation files (e.g., path/to/skema) and activate the virtual environment. If your command line prompt shows (base), the virtual environment is not activated; seeing (skema_env) confirms it is activated.
+
+On Windows: ``` cd path/to/skema skema_env\Scripts\activate ```
+
+On Mac: ``` cd path/to/skema source skema_env/bin/activate ```
+
+This will activate the skema_env virtual environment, where SKeMa and its dependencies are installed, ensuring the tool runs correctly.
 
 SKeMa uses Sentinel-2 satellite images, which can be downloaded from the [Copernicus Browser](https://dataspace.copernicus.eu/browser/). To access these images, you need to create a free account on the Copernicus Data Space website:
 - Visit [https://dataspace.copernicus.eu/](https://dataspace.copernicus.eu/) and click "Sign Up" to create an account.
