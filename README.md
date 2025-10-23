@@ -1,9 +1,37 @@
 # SKeMa
+[![DOI](https://img.shields.io/badge/DOI-10.57967%2Fhf%2F6790-blue)](https://doi.org/10.57967/hf/6790)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-SKeMa-yellow)](https://huggingface.co/m5ghanba/SKeMa)
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
+
 
 **Satellite-based Kelp Mapping using Semantic Segmentation on Sentinel-2 imagery**
 
-skema is a Python tool for classifying kelp in Sentinel-2 satellite images using a deep learning segmentation model (PyTorch). It provides a command-line interface (CLI) for easy, reproducible inference. To run the tool you would need to download Sentinel-2 images from the Copernicus Browser. More detailed instruction on how to download these images can be found in Section Usage. The following instructions are provided for anyone with no knowledge of what a command line is, no knowledge of Python or virtual environments, etc. Just follow along step by step.
+`skema` is a Python tool for classifying kelp in Sentinel-2 satellite images using a deep learning segmentation model (PyTorch). It provides a command-line interface (CLI) for easy, reproducible inference. To run the tool you would need to download Sentinel-2 images from the Copernicus Browser. More detailed instruction on how to download these images can be found in Section Usage. The following instructions are provided for anyone with no knowledge of what a command line is, no knowledge of Python or virtual environments, etc. Just follow along step by step.
 
+**Model available on Hugging Face**: [m5ghanba/SKeMa](https://huggingface.co/m5ghanba/SKeMa)  
+**DOI**: [10.57967/hf/6790](https://doi.org/10.57967/hf/6790)
+
+---
+
+## Citation
+
+If you use **SKeMa** in your research or work, please cite:
+
+```bibtex
+@software{skema_2025,
+  author       = {Mohsen Ghanbari et al.},
+  title        = {SKeMa: Satellite-based Kelp Mapping using Semantic Segmentation on Sentinel-2 imagery},
+  year         = 2025,
+  publisher    = {Hugging Face},
+  doi          = {10.57967/hf/6790},
+  url          = {https://huggingface.co/m5ghanba/SKeMa}
+}
+```
+
+**Plain text**:  
+Ghanbari, M., et al. (2025). *SKeMa: Satellite-based Kelp Mapping using Semantic Segmentation on Sentinel-2 imagery*. Hugging Face. https://doi.org/10.57967/hf/6790
+
+---
 ---
 
 ## 🚀 Installation
@@ -328,4 +356,4 @@ conda activate skema_env
 
 ## 📜 License
 
-MIT License.
+The trained model is licensed under **CC-BY-4.0** — please cite the DOI when using it.
