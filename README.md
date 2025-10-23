@@ -345,14 +345,6 @@ skema/
 
 ---
 
-## 📦 Environment (for Conda users)
-
-```bash  
-conda env create -f conda/environment.yml  
-conda activate skema_env  
-```
-
----
 
 ## 📜 License
 
