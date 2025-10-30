@@ -25,6 +25,7 @@ dependencies = [
   "torchmetrics==1.7.1",
   "tqdm>=4.66,<5",
   "gdal>=3.6,<3.8",   
+  "rich>=13.0,<14",   # Add this line
 ]
 
 [project.scripts]

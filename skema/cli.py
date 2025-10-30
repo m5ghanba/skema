@@ -1,3 +1,10 @@
+import os
+import warnings
+
+# Suppress warnings
+warnings.filterwarnings('ignore')
+os.environ['NO_ALBUMENTATIONS_UPDATE'] = '1'
+
 import click
 from skema.lib import segment
 
@@ -11,6 +18,21 @@ from skema.lib import segment
               help='Model type to use: "model_full" (with substrate/bathymetry) or "model_s2bandsandindices_only" (S2 bands and indices only). Default: model_full.')
 def main(input_dir, output_filename, model_type):
     """Segment a Sentinel-2 scene and output a kelp mask."""
+    
+    # Print configuration info
+    click.echo("\n" + "="*60)
+    click.echo("SKEMA - Kelp Classification Tool")
+    click.echo("="*60)
+    click.echo(f"Input Directory:  {input_dir}")
+    click.echo(f"Output Filename:  {output_filename}")
+    click.echo(f"Model Type:       {model_type}")
+    
+    # Check GPU availability
+    import torch
+    device = "GPU" if torch.cuda.is_available() else "CPU"
+    click.echo(f"Computing Device: {device}")
+    click.echo("="*60 + "\n")
+    
     # Define the normalization stats based on model type
     if model_type == 'model_full':
         mean_per_channel = [1.93357159e+02, 2.53693333e+02, 1.41648022e+02, 9.99292362e+02,

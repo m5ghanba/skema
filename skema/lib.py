@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 import torchvision.transforms as trns
 import torch.nn as nn
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
 from torchmetrics import JaccardIndex
 from sklearn.model_selection import train_test_split
@@ -33,14 +34,14 @@ import xml.etree.ElementTree as ET
 from importlib.resources import files
 
 
-print(torch.__version__)
-print(torch.version.cuda)  # Should print the version of CUDA PyTorch is using
-print("cuDNN version:", torch.backends.cudnn.version())
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# print(torch.__version__)
+# print(torch.version.cuda)  # Should print the version of CUDA PyTorch is using
+# print("cuDNN version:", torch.backends.cudnn.version())
+# DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Set the device to GPU if available, otherwise use CPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(DEVICE)
+# print(DEVICE)
 
 
 
@@ -960,23 +961,6 @@ class DatasetInference(SatelliteDataset):
         # return np.pad(tile, ((0, pad_h), (0, pad_w), (0, 0)), mode='constant', constant_values=0)
         return np.pad(tile, ((0, pad_h), (0, pad_w), (0, 0)), mode='reflect')
 
-    def count_tiles_not_weighted(self, image_shape, tile_size, overlap):
-        """Count how many tiles will be generated, exactly matching generate_tiles()."""
-        h, w, _ = image_shape
-        step_size = int(tile_size * (1 - overlap))
-        count = 0
-    
-        # Main tiling loop
-        for i in range(0, h - tile_size + 1, step_size):
-            for j in range(0, w - tile_size + 1, step_size):
-                count += 1
-    
-        # Edge padding (only bottom-right area, just like in generate_tiles)
-        for i in range(h - tile_size, h, step_size):
-            for j in range(w - tile_size, w, step_size):
-                count += 1
-    
-        return count
     def pad_tile(self, tile):
         """Apply intelligent padding to the tile if it's smaller than the tile_size."""
         pad_h = max(0, self.tile_size - tile.shape[0])
@@ -998,44 +982,6 @@ class DatasetInference(SatelliteDataset):
             mode = self.padding_mode
             
         return np.pad(tile, ((0, pad_h), (0, pad_w), (0, 0)), mode=mode)
-
-    def count_tiles(self, image_shape, tile_size, overlap):
-        """Count how many tiles will be generated, exactly matching generate_tiles()."""
-        h, w, _ = image_shape
-        step_size = int(tile_size * (1 - overlap))
-        count = 0
-    
-        # Main tiling loop
-        for i in range(0, h - tile_size + 1, step_size):
-            for j in range(0, w - tile_size + 1, step_size):
-                count += 1
-    
-        # Edge tiles count
-        edge_positions = []
-        
-        # Right edge tiles
-        if w % step_size != 0 or w - tile_size < 0:
-            for i in range(0, h - tile_size + 1, step_size):
-                j_start = max(0, w - tile_size)
-                edge_positions.append((i, j_start))
-        
-        # Bottom edge tiles
-        if h % step_size != 0 or h - tile_size < 0:
-            for j in range(0, w - tile_size + 1, step_size):
-                i_start = max(0, h - tile_size)
-                edge_positions.append((i_start, j))
-        
-        # Bottom-right corner tile
-        if (h % step_size != 0 or h - tile_size < 0) and (w % step_size != 0 or w - tile_size < 0):
-            i_start = max(0, h - tile_size)
-            j_start = max(0, w - tile_size)
-            edge_positions.append((i_start, j_start))
-        
-        # Remove duplicates
-        edge_positions = list(set(edge_positions))
-        count += len(edge_positions)
-    
-        return count
 
     def _process_batch_not_weighted(self, tiles, coords, predictions):
         """Not weighted - Run inference on a batch of tiles and write results into full image."""
@@ -1087,6 +1033,7 @@ class DatasetInference(SatelliteDataset):
             predictions[i:end_i, j:end_j] += tile_pred * tile_weights
             weight_accumulator[i:end_i, j:end_j] += tile_weights
 
+
     def run_model_on_tiles(self, batch_size=8):
         """
         Run the model on tiles with improved edge handling.
@@ -1096,39 +1043,50 @@ class DatasetInference(SatelliteDataset):
         """
         self.model.eval()
         
-
         predictions = np.zeros_like(self.image[:, :, 0], dtype=np.float32)
         weight_accumulator = np.zeros_like(self.image[:, :, 0], dtype=np.float32)
 
-    
+        # First pass: count tiles
+        tile_count = sum(1 for _ in self.generate_tiles(self.image))
+        
+        # Second pass: process tiles
         tile_generator = self.generate_tiles(self.image)
-        total_tiles = self.count_tiles(self.image.shape, self.tile_size, self.overlap)
-    
         batch_tiles = []
         batch_coords = []
-    
-        with torch.no_grad():
-            for tile, (i, j) in tqdm(tile_generator, total=total_tiles, desc="Predicting on Tiles"):
-                # Preprocess and add tile to batch
-                tile_tensor = torch.tensor(tile).permute(2, 0, 1).unsqueeze(0).float()
-                batch_tiles.append(tile_tensor)
-                batch_coords.append((i, j))
-    
-                # Run batch when full
-                if len(batch_tiles) == batch_size:
+        tiles_processed = 0
 
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+        ) as progress:
+            task = progress.add_task("[cyan]Processing ...", total=tile_count)
+            
+            with torch.no_grad():
+                for tile, (i, j) in tile_generator:
+                    # Preprocess and add tile to batch
+                    tile_tensor = torch.tensor(tile).permute(2, 0, 1).unsqueeze(0).float()
+                    batch_tiles.append(tile_tensor)
+                    batch_coords.append((i, j))
+
+                    # Run batch when full
+                    if len(batch_tiles) == batch_size:
+                        self._process_batch(batch_tiles, batch_coords, predictions, weight_accumulator)
+                        tiles_processed += len(batch_tiles)
+                        progress.update(task, completed=tiles_processed)
+                        batch_tiles.clear()
+                        batch_coords.clear()
+
+                # Handle remaining tiles
+                if batch_tiles:
                     self._process_batch(batch_tiles, batch_coords, predictions, weight_accumulator)
+                    tiles_processed += len(batch_tiles)
+                    progress.update(task, completed=tiles_processed)
 
-                    batch_tiles.clear()
-                    batch_coords.clear()
-    
-            # Handle remaining tiles
-            if batch_tiles:
-                self._process_batch(batch_tiles, batch_coords, predictions, weight_accumulator)
-    
         # Finalize predictions
-
-        # Avoid division by zero
         weight_accumulator = np.where(weight_accumulator == 0, 1, weight_accumulator)
         predictions = predictions / weight_accumulator
             
@@ -1140,59 +1098,62 @@ class DatasetInference(SatelliteDataset):
 
         # Apply filters for model_full
         if self.model_type == 'model_full':
-            # Filters: Remove kelp where bathymetry (self.image[:, :, 6]) < -100 or > 20   and where substrate (self.image[:, :, 5]) == 4
             predictions[(self.image[:, :, 6] < -100) | (self.image[:, :, 6] > 20)] = 0
             predictions[(self.image[:, :, 5] == 4)] = 0
-    
-        # Optional: visualize the final result
-        plt.figure(figsize=(10, 8))
-        plt.imshow(predictions, cmap='gray')
-        plt.title("Final Prediction")
-        plt.axis('off')
-        plt.show()
-    
+
         return predictions
+
 
     def run_model_on_tiles_not_weighted(self, batch_size=8):
         """Run the model on tiles in batches with GPU acceleration and low RAM usage."""
         self.model.eval()
         predictions = np.zeros_like(self.image[:, :, 0], dtype=np.uint8)
-    
+
+        # First pass: count tiles
+        tile_count = sum(1 for _ in self.generate_tiles_not_weighted(self.image))
+        
+        # Second pass: process tiles
         tile_generator = self.generate_tiles_not_weighted(self.image)
-        total_tiles = self.count_tiles_not_weighted(self.image.shape, self.tile_size, self.overlap)
-    
         batch_tiles = []
         batch_coords = []
-    
-        with torch.no_grad():
-            for tile, (i, j) in tqdm(tile_generator, total=total_tiles, desc="Predicting on Tiles"):
-                # Preprocess and add tile to batch
-                tile_tensor = torch.tensor(tile).permute(2, 0, 1).unsqueeze(0).float()
-                batch_tiles.append(tile_tensor)
-                batch_coords.append((i, j))
-    
-                # Run batch when full
-                if len(batch_tiles) == batch_size:
+        tiles_processed = 0
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+        ) as progress:
+            task = progress.add_task("[cyan]Processing tiles...", total=tile_count)
+            
+            with torch.no_grad():
+                for tile, (i, j) in tile_generator:
+                    # Preprocess and add tile to batch
+                    tile_tensor = torch.tensor(tile).permute(2, 0, 1).unsqueeze(0).float()
+                    batch_tiles.append(tile_tensor)
+                    batch_coords.append((i, j))
+
+                    # Run batch when full
+                    if len(batch_tiles) == batch_size:
+                        self._process_batch_not_weighted(batch_tiles, batch_coords, predictions)
+                        tiles_processed += len(batch_tiles)
+                        progress.update(task, completed=tiles_processed)
+                        batch_tiles.clear()
+                        batch_coords.clear()
+
+                # Handle remaining tiles
+                if batch_tiles:
                     self._process_batch_not_weighted(batch_tiles, batch_coords, predictions)
-                    batch_tiles.clear()
-                    batch_coords.clear()
-    
-            # Handle remaining tiles
-            if batch_tiles:
-                self._process_batch_not_weighted(batch_tiles, batch_coords, predictions)
+                    tiles_processed += len(batch_tiles)
+                    progress.update(task, completed=tiles_processed)
 
         # Apply filters for model_full
         if self.model_type == 'model_full':
-            # Filters: Remove kelp where bathymetry (self.image[:, :, 6]) < -100 or > 20   and where substrate (self.image[:, :, 5]) == 4
             predictions[(self.image[:, :, 6] < -100) | (self.image[:, :, 6] > 20)] = 0
             predictions[(self.image[:, :, 5] == 4)] = 0
-    
-        # Optional: visualize the final result
-        plt.imshow(predictions, cmap='gray')
-        plt.title("Final Predictions")
-        plt.axis('off')
-        plt.show()
-    
+
         return predictions
 
 

@@ -6,6 +6,7 @@ __pycache__/
 # Ignore virtual environments
 skema_env/
 venv/
+kom_env/
 
 # Ignore build artifacts
 build/
