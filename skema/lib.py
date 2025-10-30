@@ -1,38 +1,38 @@
 import rasterio
-import matplotlib.pyplot as plt
+
 import numpy as np 
-import pandas as pd 
 import glob
 import torch
-from torch.utils.data import DataLoader
-import torchvision.transforms as trns
-import torch.nn as nn
-from pytorch_lightning.callbacks import ModelCheckpoint, Callback
+
+
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
-from torchmetrics import JaccardIndex
 from sklearn.model_selection import train_test_split
 
 import os
 import albumentations as A
 
-from torch.utils.data import DataLoader
+
 from torch.utils.data import Dataset as BaseDataset
 from torch.optim import lr_scheduler
 import segmentation_models_pytorch as smp
 import pytorch_lightning as pl
-import random
+
 
 # to save the results
-import tifffile as tiff  # Use tifffile to handle TIFF files
 import urllib.request
-import getpass
+
 
 # preprocessing
-import subprocess
 import xml.etree.ElementTree as ET
 from importlib.resources import files
 
+from rasterio.warp import reproject, Resampling
+from rasterio.transform import from_bounds
+from rich.console import Console
+
+
+from rasterio.enums import Resampling
 
 # print(torch.__version__)
 # print(torch.version.cuda)  # Should print the version of CUDA PyTorch is using
@@ -57,6 +57,12 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def extract_bands_to_geotiffs(safe_dir, output_dir):
+    """
+    Extracts and stacks Sentinel-2 bands from .SAFE format into multi-band GeoTIFF files, 
+    applying baseline-dependent offset correction (10m and 20m resolution bands separately).
+    """
+    
+    console = Console()
     product_id = os.path.basename(safe_dir).replace(".SAFE", "")
 
     bands_10m = ['B02', 'B03', 'B04', 'B08']
@@ -72,14 +78,15 @@ def extract_bands_to_geotiffs(safe_dir, output_dir):
                             band_files[band] = os.path.join(root, file)
         for band in bands:
             if band not in band_files:
-                print(f"Warning: {band}.jp2 not found in {safe_dir}")
+                console.print(f"[yellow]Warning: {band}.jp2 not found in {safe_dir}[/yellow]")
         return [band_files.get(b) for b in bands]
 
-    band_paths_10m = find_band_files(bands_10m, safe_dir)
-    band_paths_20m = find_band_files(bands_20m, safe_dir)
+    with console.status("[cyan]Locating Sentinel-2 band files..."):
+        band_paths_10m = find_band_files(bands_10m, safe_dir)
+        band_paths_20m = find_band_files(bands_20m, safe_dir)
 
     if None in band_paths_10m:
-        print(f"Missing some 10m bands in {safe_dir}, skipping...")
+        console.print(f"[red]Missing some 10m bands in {safe_dir}, skipping...[/red]")
         return None, None
 
     def get_processing_baseline(safe_dir):
@@ -92,7 +99,7 @@ def extract_bands_to_geotiffs(safe_dir, output_dir):
             if xml_path:
                 break
         if not xml_path:
-            print(f"No MTD_MSIL2A.xml found in {safe_dir}")
+            console.print(f"[yellow]No MTD_MSIL2A.xml found in {safe_dir}[/yellow]")
             return None
         tree = ET.parse(xml_path)
         root = tree.getroot()
@@ -102,38 +109,56 @@ def extract_bands_to_geotiffs(safe_dir, output_dir):
     pb = get_processing_baseline(safe_dir)
     shift = 1000 if pb and pb >= 4.0 else 0
 
-    def write_multiband_geotiff(output_path, band_paths):
+    def write_multiband_geotiff(output_path, band_paths, description):
         with rasterio.open(band_paths[0]) as src:
             meta = src.meta.copy()
             meta.update({"count": len(band_paths), "dtype": "uint16", "driver": "GTiff"})
-        with rasterio.open(output_path, "w", **meta) as dst:
-            for i, bp in enumerate(band_paths):
-                with rasterio.open(bp) as bsrc:
-                    arr = bsrc.read(1).astype(np.int32) - shift
-                    arr = np.clip(arr, 0, None).astype(np.uint16)
-                    dst.write(arr, i + 1)
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        ) as progress:
+            task = progress.add_task(f"[cyan]{description}", total=len(band_paths))
+            
+            with rasterio.open(output_path, "w", **meta) as dst:
+                for i, bp in enumerate(band_paths):
+                    with rasterio.open(bp) as bsrc:
+                        arr = bsrc.read(1).astype(np.int32) - shift
+                        arr = np.clip(arr, 0, None).astype(np.uint16)
+                        dst.write(arr, i + 1)
+                    progress.advance(task)
 
     output_10m = os.path.join(output_dir, f"{product_id}_B2B3B4B8.tif")
-    write_multiband_geotiff(output_10m, band_paths_10m)
+    write_multiband_geotiff(output_10m, band_paths_10m, "Extracting and stacking 10m bands...")
 
     output_20m = None
     if None not in band_paths_20m:
         output_20m = os.path.join(output_dir, f"{product_id}_B5B6B7B8A_B11B12.tif")
-        write_multiband_geotiff(output_20m, band_paths_20m)
+        write_multiband_geotiff(output_20m, band_paths_20m, "Extracting and stacking 20m bands...")
+
+    console.print(f"[green]✓[/green] Sentinel-2 band extraction complete.")
 
     return output_10m, output_20m
 
 
-def warp_bathy_and_subs(safe_folder_root):
+def warp_bathy_and_subs(safe_folder_root, basename):
+    """
+    Aligns bathymetry and substrate rasters to match the CRS, resolution (10m), and extent 
+    of the reference Sentinel-2 image using bilinear resampling.
+    """
+    console = Console()
+    
     # Look for _B2B3B4B8.tif inside each subfolder
     for folder_name in os.listdir(safe_folder_root):
         folder_path = os.path.join(safe_folder_root, folder_name)
         if not os.path.isdir(folder_path):
             continue
 
-        tif_file = next((f for f in os.listdir(folder_path) if f.endswith("_B2B3B4B8.tif")), None)
+        tif_file = next((f for f in os.listdir(folder_path) if f == f"{basename}_B2B3B4B8.tif"), None)
         if not tif_file:
-            print(f"No reference image found in {folder_path}, skipping...")
+            # console.print(f"[yellow]No reference image found in {folder_path}, skipping...[/yellow]")
             continue
 
         reference_tif = os.path.join(folder_path, tif_file)
@@ -148,78 +173,107 @@ def warp_bathy_and_subs(safe_folder_root):
             "HG_substrate_20m.tif": "_SubsHG.tif",
         }
 
-        # Load bathy/substrate files from static directory
-        for file_name, suffix in input_files.items():
-            try:
-                static_path = files("skema.static.bathy_substrate").joinpath(file_name)
-                input_file_path = str(static_path)
-            except Exception as e:
-                print(f"Failed to access static file {file_name}: {e}")
-                continue
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+        ) as progress:
+            task = progress.add_task(f"[cyan]Aligning bathymetry and substrate files with Sentinel-2 image...", total=len(input_files))
+            
+            # Load bathy/substrate files from static directory
+            for file_name, suffix in input_files.items():
+                try:
+                    static_path = files("skema.static.bathy_substrate").joinpath(file_name)
+                    input_file_path = str(static_path)
+                except Exception as e:
+                    console.print(f"[red]Failed to access static file {file_name}: {e}[/red]")
+                    progress.advance(task)
+                    continue
 
-            output_file_path = os.path.join(folder_path, folder_name + suffix)
+                output_file_path = os.path.join(folder_path, folder_name + suffix)
 
-            with rasterio.open(reference_tif) as ref:
-                bounds = ref.bounds
-                crs = ref.crs.to_string()
+                with rasterio.open(reference_tif) as ref:
+                    bounds = ref.bounds
+                    crs = ref.crs.to_string()
 
-            gdalwarp_cmd = [
-                "gdalwarp",
-                "-t_srs", crs,
-                "-tr", "10", "10",
-                "-te", str(bounds.left), str(bounds.bottom), str(bounds.right), str(bounds.top),
-                "-r", "bilinear",
-                input_file_path, output_file_path
-            ]
+                width = int((bounds.right - bounds.left) / 10)
+                height = int((bounds.top - bounds.bottom) / 10)
+                transform = from_bounds(bounds.left, bounds.bottom, bounds.right, bounds.top, width, height)
 
-            subprocess.run(gdalwarp_cmd)
-            print(f"Warped and saved: {output_file_path}")
+                with rasterio.open(input_file_path) as src:
+                    out_data = np.empty((height, width), dtype=src.dtypes[0])
+                    
+                    reproject(
+                        source=rasterio.band(src, 1),
+                        destination=out_data,
+                        src_transform=src.transform,
+                        src_crs=src.crs,
+                        dst_transform=transform,
+                        dst_crs=crs,
+                        resampling=Resampling.bilinear
+                    )
+                    
+                    profile = src.profile.copy()
+                    profile.update({
+                        'crs': crs,
+                        'transform': transform,
+                        'width': width,
+                        'height': height
+                    })
+                    
+                    with rasterio.open(output_file_path, 'w', **profile) as dst:
+                        dst.write(out_data, 1)
+
+                progress.advance(task)
+        
+        console.print(f"[green]✓[/green] Alignment complete.")
 
 
 def fill_nodata_fixed_value(input_file, output_file, fill_value):
-    """Fill NoData cells in a raster with a fixed value."""
-    from osgeo import gdal
-    dataset = gdal.Open(input_file, gdal.GA_ReadOnly)
-    if not dataset:
-        raise FileNotFoundError(f"Unable to open {input_file}")
+    """
+    Replaces NoData values in a raster with a specified fill value and removes the NoData flag.
+    """
 
-    band = dataset.GetRasterBand(1)
-    nodata_value = band.GetNoDataValue()
+    with rasterio.open(input_file) as src:
+        data = src.read(1)
+        nodata_value = src.nodata
+        profile = src.profile.copy()
+        
+        if nodata_value is not None:
+            data[data == nodata_value] = fill_value
+        
+        profile.update(nodata=None)
+        
+        with rasterio.open(output_file, 'w', **profile) as dst:
+            dst.write(data, 1)
 
-    driver = gdal.GetDriverByName("GTiff")
-    out_dataset = driver.CreateCopy(output_file, dataset, strict=0)
-    out_band = out_dataset.GetRasterBand(1)
-
-    data = out_band.ReadAsArray()
-    if nodata_value is not None:
-        data[data == nodata_value] = fill_value
-
-    out_band.WriteArray(data)
-    out_band.DeleteNoDataValue()
-
-    out_band.FlushCache()
-    out_dataset.FlushCache()
-    dataset = None
-    out_dataset = None
-
-    print(f"Processed and saved: {output_file}")
+    # print(f"Processed and saved: {output_file}")
     os.remove(input_file)
+
 
 
 def merge_substrate_files_single(safe_output_dir):
     """Merge substrate rasters in a single SAFE output folder into _Subs.tif."""
+    """
+    Merges five regional substrate rasters into a single substrate file, prioritizing valid 
+    substrate values (1-4) and removing original files after merge.
+    """
+    
+    console = Console()
     suffixes = ["_SubsNCC.tif", "_SubsSOG.tif", "_SubsWCVI.tif", "_SubsQCS.tif", "_SubsHG.tif"]
     valid_values = {1, 2, 3, 4}
 
     # Collect input rasters
     input_files = [os.path.join(safe_output_dir, f) for f in os.listdir(safe_output_dir) if any(f.endswith(s) for s in suffixes)]
     if len(input_files) != 5:
-        print(f"Not all substrate files found in {safe_output_dir}, skipping merge.")
+        console.print(f"[yellow]Not all substrate files found in {safe_output_dir}, skipping merge.[/yellow]")
         return None
 
     b2348_file = next((f for f in os.listdir(safe_output_dir) if f.endswith("_B2B3B4B8.tif")), None)
     if not b2348_file:
-        print(f"No reference image in {safe_output_dir}, skipping merge.")
+        # console.print(f"[yellow]No reference image in {safe_output_dir}, skipping merge.[/yellow]")
         return None
 
     base_name = b2348_file.replace("_B2B3B4B8.tif", "")
@@ -240,20 +294,21 @@ def merge_substrate_files_single(safe_output_dir):
     with rasterio.open(output_file, "w", **meta) as dst:
         dst.write(merged_data, 1)
 
-    print(f"Merged substrate saved: {output_file}")
-
     # delete originals
     for file in input_files:
         try:
             os.remove(file)
         except Exception as e:
-            print(f"Error deleting {file}: {e}")
+            console.print(f"[red]Error deleting {file}: {e}[/red]")
 
     return output_file
 
 
 def apply_fill_nodata_single(safe_output_dir, fill_value_subs=0, fill_value_bathy=-2000):
-    """Fill nodata for substrate and bathymetry in one SAFE folder."""
+    """
+    Applies NoData filling to substrate (default: 0) and bathymetry (default: -2000) rasters 
+    and renames them to final output files.
+    """
     subs_file = next((f for f in os.listdir(safe_output_dir) if f.endswith("_Subs.tif")), None)
     bathy_file = next((f for f in os.listdir(safe_output_dir) if f.endswith("_Bathy.tif")), None)
 
@@ -270,11 +325,6 @@ def apply_fill_nodata_single(safe_output_dir, fill_value_subs=0, fill_value_bath
         bathy_file = output_file
 
     return subs_file, bathy_file
-
-
-
-
-
 
 
 
@@ -726,14 +776,8 @@ def load_model(model_type='model_full'):
 # supports having both 10m and 20m bands as well as substrate and bathymetry channels.
 # also normalization is added here. Set mean and std to None if it was off during training. Otherwise, it is assumed mean_per_channel and 
 # std_per_channel are provided. 
-import os
-import glob
-import rasterio
-import numpy as np
-import torch
-import matplotlib.pyplot as plt
-from rasterio.enums import Resampling
-from tqdm import tqdm
+
+
 
 
 def normalize_tile_mean_std(tile, mean_per_channel, std_per_channel):
@@ -1041,6 +1085,7 @@ class DatasetInference(SatelliteDataset):
         Args:
             batch_size (int): Number of tiles to process in each batch
         """
+        console = Console()
         self.model.eval()
         
         predictions = np.zeros_like(self.image[:, :, 0], dtype=np.float32)
@@ -1101,6 +1146,8 @@ class DatasetInference(SatelliteDataset):
             predictions[(self.image[:, :, 6] < -100) | (self.image[:, :, 6] > 20)] = 0
             predictions[(self.image[:, :, 5] == 4)] = 0
 
+        console.print(f"[green]✓[/green] Processing complete.")
+
         return predictions
 
 
@@ -1126,7 +1173,7 @@ class DatasetInference(SatelliteDataset):
             TimeElapsedColumn(),
             TimeRemainingColumn(),
         ) as progress:
-            task = progress.add_task("[cyan]Processing tiles...", total=tile_count)
+            task = progress.add_task("[cyan]Processing ...", total=tile_count)
             
             with torch.no_grad():
                 for tile, (i, j) in tile_generator:
@@ -1167,6 +1214,7 @@ class DatasetInference(SatelliteDataset):
 
     def save_output(self, predictions, output_path):
         """Save the reconstructed output as a GeoTIFF."""
+        console = Console()
         # Update predictions to uint8 if needed before saving
         predictions = predictions.astype(np.uint8)
 
@@ -1182,6 +1230,9 @@ class DatasetInference(SatelliteDataset):
         # Save the file with rasterio, ensuring that spatial metadata is preserved
         with rasterio.open(output_path, 'w', **updated_metadata) as dst:
             dst.write(predictions, 1)  # Write data to the first band
+        
+        
+        console.print(f"[green]✓[/green] Kelp classification map saved to [bold]{output_path}[bold].")
 
 # Set the main directory
 # main_directory = r"C:\Alena\results\20220806T191919_20220806T192707_T09UXQ"
@@ -1230,7 +1281,7 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
 
         # Steps 2-4: Only for model_full
         if model_type == 'model_full':
-            warp_bathy_and_subs(parent_dir)
+            warp_bathy_and_subs(parent_dir, safe_basename)
             merge_substrate_files_single(output_folder)
             apply_fill_nodata_single(output_folder)
 

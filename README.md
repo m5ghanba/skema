@@ -1,8 +1,9 @@
 # SKeMa
 [![DOI](https://img.shields.io/badge/DOI-10.57967%2Fhf%2F6790-blue)](https://doi.org/10.57967/hf/6790)
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-SKeMa-yellow)](https://huggingface.co/m5ghanba/SKeMa)
-[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
-
+[![PyPI](https://img.shields.io/pypi/v/skema)](https://pypi.org/project/skema/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Model License: CC BY 4.0](https://img.shields.io/badge/Model%20License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 
 **Satellite-based Kelp Mapping using Semantic Segmentation on Sentinel-2 imagery**
 
@@ -10,6 +11,23 @@
 
 **Model available on Hugging Face**: [m5ghanba/SKeMa](https://huggingface.co/m5ghanba/SKeMa)  
 **DOI**: [10.57967/hf/6790](https://doi.org/10.57967/hf/6790)
+
+---
+
+## ⚡ Quick Start (Experienced Users)
+```bash
+pip install skema
+
+# Download static files (for model_full only) from sources listed below
+# Download Sentinel-2 imagery from https://dataspace.copernicus.eu/browser/
+
+skema --input-dir path/to/S2_scene.SAFE --output-filename output.tif
+
+# For help and all options
+skema --help
+```
+
+**For detailed installation instructions (beginner-friendly), see [Installation](#-installation) below.**
 
 ---
 
@@ -227,29 +245,6 @@ pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https
 
 Skip this step if you don't have a GPU.
 
-
-#### ⚠️ GDAL Installation Issue on Windows
-
-If you encounter an error when installing `gdal` after running:
-
-```bash
-pip install --force-reinstall dist/skema-0.1.0-py3-none-any.whl
-```
-
-it is recommended to install GDAL using a **precompiled wheel** from:
-
-👉 [https://github.com/cgohlke/geospatial-wheels/releases](https://github.com/cgohlke/geospatial-wheels/releases)
-
-##### 🪟 For Windows Users:
-
-1. Visit the link above.
-2. Under the **Assets** section of the desired release (e.g., `v2023.9.30`), download the appropriate wheel for your Python version. For example, if you're using **Python 3.9 on 64-bit Windows**, download: GDAL-3.7.2-cp39-cp39-win_amd64.whl. 
-3. Install it using pip:
-
-```bash
-pip install path/to/GDAL-3.7.2-cp39-cp39-win_amd64.whl
-```
-
 ---
 
 ## 🛰️ Usage
@@ -347,5 +342,5 @@ skema/
 
 
 ## 📜 License
-
-The trained model is licensed under **CC-BY-4.0** — please cite the DOI when using it.
+- **Code**: MIT License (see LICENSE file)
+- **Model**: The trained model is licensed under **CC-BY-4.0** — please cite the DOI when using it.
