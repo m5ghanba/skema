@@ -1,7 +1,7 @@
 # SKeMa
 [![DOI](https://img.shields.io/badge/DOI-10.57967%2Fhf%2F6790-blue)](https://doi.org/10.57967/hf/6790)
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-SKeMa-yellow)](https://huggingface.co/m5ghanba/SKeMa)
-[![PyPI](https://img.shields.io/pypi/v/skema)](https://pypi.org/project/skema/)
+[![PyPI](https://img.shields.io/pypi/v/skema-kelp)](https://pypi.org/project/skema-kelp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Model License: CC BY 4.0](https://img.shields.io/badge/Model%20License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 
@@ -16,7 +16,7 @@
 
 ## ⚡ Quick Start (Experienced Users)
 ```bash
-pip install skema
+pip install skema-kelp
 
 # Download static files (for model_full only) from sources listed below
 # Download Sentinel-2 imagery from https://dataspace.copernicus.eu/browser/
@@ -50,13 +50,12 @@ If you use **SKeMa** in your research or work, please cite:
 Ghanbari, M., et al. (2025). *SKeMa: Satellite-based Kelp Mapping using Semantic Segmentation on Sentinel-2 imagery*. Hugging Face. https://doi.org/10.57967/hf/6790
 
 ---
----
 
 ## 🚀 Installation
 
-Before you can set up SKeMa, you'll need **Python** (version 3.8 or higher) and **Git** installed on your computer. These are free tools, and no accounts or sign-ups are required to install them or to clone the repository from GitHub later. We'll install them using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps.
+Before you can set up SKeMa, you'll need **Python** (version 3.8 or higher) installed on your computer. Python is a free tool, and no accounts or sign-ups are required to install it. We'll install it using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps.
 
-### Step 1: Install Prerequisites (Python and Git)
+### Step 1: Install Python
 
 #### On Windows
 1. **Check if Winget is available** (it's built into Windows 10 version 2009 or later, or Windows 11, and most modern systems have it):
@@ -74,16 +73,7 @@ Before you can set up SKeMa, you'll need **Python** (version 3.8 or higher) and 
    - Restart your terminal after installation.
    - Verify: Run `python --version`. It should output something like "Python 3.12.7". If not, close and reopen the terminal, or manually add Python to PATH (search online for "add Python to PATH Windows").
 
-3. **Install Git**:
-   - In your terminal, run:
-     ```
-     winget install --id Git.Git -e --source winget
-     ```
-   - This installs Git. It adds itself to PATH automatically.
-   - Restart your terminal.
-   - Verify: Run `git --version`. It should output something like "git version 2.46.0.windows.1".
-
-   *Alternative if winget fails*: Download the installer from [git-scm.com](https://git-scm.com/download/win) using your browser, run it, and follow the GUI prompts (use defaults). Then verify as above.
+   *Alternative if winget fails*: Download the installer from [python.org](https://www.python.org/downloads/windows/) using your browser, run it, and follow the GUI prompts (make sure to check "Add Python to PATH"). Then verify as above.
 
 #### On macOS
 1. **Install Homebrew** (a package manager for CLI installations, if you don't have it):
@@ -104,14 +94,7 @@ Before you can set up SKeMa, you'll need **Python** (version 3.8 or higher) and 
    - This installs Python and adds it to PATH.
    - Verify: Run `python3 --version` (note: use `python3` on macOS). It should output "Python 3.12.7".
 
-3. **Install Git**:
-   - Run:
-     ```
-     brew install git
-     ```
-   - Verify: Run `git --version`. It should output something like "git version 2.46.0".
-
-   *Alternative*: Download the official installer from [python.org](https://www.python.org/downloads/macos/) and [git-scm.com](https://git-scm.com/download/mac) using your browser, run them, and follow GUI steps.
+   *Alternative*: Download the official installer from [python.org](https://www.python.org/downloads/macos/) using your browser, run it, and follow GUI steps.
 
 #### On Linux (e.g., Ubuntu/Debian; adjust for other distros like Fedora)
 1. **Update your package list**:
@@ -125,29 +108,20 @@ Before you can set up SKeMa, you'll need **Python** (version 3.8 or higher) and 
 2. **Install Python 3.12**:
    - Run:
      ```
-     sudo apt install python3.12 python3.12-venv
+     sudo apt install python3.12 python3.12-venv python3-pip
      ```
-   - This installs Python and the venv module.
+   - This installs Python, the venv module, and pip.
    - Verify: Run `python3 --version`. It should output "Python 3.12.x".
    - *For Fedora/RHEL*: Use `sudo dnf install python3.12` instead.
 
-3. **Install Git**:
-   - Run:
-     ```
-     sudo apt install git
-     ```
-   - Verify: Run `git --version`.
-   - *For Fedora/RHEL*: Use `sudo dnf install git`.
-
    *Note*: If your distro's repositories don't have Python 3.12, add a PPA (e.g., for Ubuntu: `sudo add-apt-repository ppa:deadsnakes/ppa` then update and install).
 
-Once Python and Git are installed and verified, proceed to the next section. If you encounter errors (e.g., "command not found"), search online for the exact error message + your OS.
+Once Python is installed and verified, proceed to the next section. If you encounter errors (e.g., "command not found"), search online for the exact error message + your OS.
 
 ### Step 2: Install SKeMa
-We recommend creating a **virtual environment**. A virtual environment is like a clean sandbox that keeps all the Python packages for this project separate from your system-wide Python installation.
 
-To do this, open your **terminal**:  
-- On **Windows**, you can use Command Prompt, PowerShell, or Anaconda Prompt.  
+Open your **terminal**:  
+- On **Windows**, you can use Command Prompt or PowerShell.  
 - On **macOS**, open the Terminal app.  
 - On **Linux**, open your terminal emulator of choice.  
 
@@ -165,23 +139,60 @@ cd /Users/yourname/Documents
 
 👉 The easiest way to navigate is to open your file explorer, go to the folder you want, then copy its full path and paste it after `cd` on the command line. For more details, look up "basic terminal navigation" online.  
 
-Now, navigate to a directory where you want to download the SKeMa installation files, then run:
+Now, navigate to a directory where you want to work with SKeMa, then run:
 
-```  
-python -m venv skema_env  
-# On Windows:  
-skema_env\Scripts\activate  
-# On macOS/Linux:  
-source skema_env/bin/activate  
+#### Option 1: Install with pip (Recommended)
 
-# Clone the repository  
-git clone https://github.com/m5ghanba/skema.git  
-```  
+```bash
+# Create a virtual environment (optional but recommended)
+python -m venv skema_env
 
-Each line:  
+# Activate the virtual environment
+# On Windows:
+skema_env\Scripts\activate
+# On macOS/Linux:
+source skema_env/bin/activate
+
+# Install SKeMa
+pip install skema-kelp
+```
+
+#### Option 2: Install from source (for developers)
+
+If you want to modify the code or contribute to development:
+
+```bash
+# Install Git first (see system-specific instructions below)
+# Then clone the repository
+git clone https://github.com/m5ghanba/skema.git
+cd skema
+
+# Create and activate virtual environment
+python -m venv skema_env
+# On Windows:
+skema_env\Scripts\activate
+# On macOS/Linux:
+source skema_env/bin/activate
+
+# Install in development mode
+pip install -e .
+```
+
+**Installing Git (only needed for Option 2):**
+- **Windows**: `winget install --id Git.Git -e --source winget` or download from [git-scm.com](https://git-scm.com/download/win)
+- **macOS**: `brew install git` or download from [git-scm.com](https://git-scm.com/download/mac)
+- **Linux**: `sudo apt install git` (Ubuntu/Debian) or `sudo dnf install git` (Fedora/RHEL)
+
+Each line explained:  
 - `python -m venv skema_env`: Creates a virtual environment named `skema_env` to isolate project dependencies.  
 - `skema_env\Scripts\activate` (Windows) or `source skema_env/bin/activate` (macOS/Linux): Activates the virtual environment, ensuring subsequent commands use its isolated Python and packages.  
-- `git clone https://github.com/m5ghanba/skema.git`: Downloads the SKeMa repository from GitHub into a new folder named `skema` in your current directory. The working directory is the folder your terminal is currently operating in, which you can check by running `pwd` (macOS/Linux) or `cd` (Windows).
+- `pip install skema-kelp`: Installs SKeMa and all its dependencies from PyPI.
+
+If you encounter packaging errors, make sure your pip and build tools are up to date:
+
+```bash
+pip install --upgrade pip setuptools wheel
+```
 
 #### Static files  
 There are necessary **static files** that need to be downloaded. These are bathymetry and substrate files from the whole coast of British Columbia that `skema` uses when predicting kelp on a Sentinel-2 image.  
@@ -203,25 +214,6 @@ skema/skema/static/bathy_substrate/
 
 - Shallow substrate model (20m) of the Pacific Canadian coast (Haggarty et al., 2020):  
   https://osdp-psdo.canada.ca/dp/en/search/metadata/NRCAN-FGP-1-b100cf6c-7818-4748-9960-9eab2aa6a7a0  
-
-
-Now, install SKeMa:  
-
-```bash
-cd skema
-pip install .
-```
-
-Each line:
-- `cd skema`: moves into the SKeMa project folder.
-- `pip install .`: installs the package and all its dependencies, and makes the skema command available.
-
-If you encounter packaging errors, make sure your pip and build tools are up to date:
-
-```bash
-pip install --upgrade pip setuptools wheel
-```
-
 
 #### GPU support  
 
@@ -249,11 +241,19 @@ Skip this step if you don't have a GPU.
 
 ## 🛰️ Usage
 
-To use SKeMa after the initial installation, you must activate its virtual environment each time you start a new session. Navigate to the directory where you downloaded the SKeMa installation files (e.g., path/to/skema) and activate the virtual environment. If your command line prompt shows (base), the virtual environment is not activated; seeing (skema_env) confirms it is activated.
+To use SKeMa after the initial installation, you must activate its virtual environment each time you start a new session (if you created one). Navigate to the directory where you created the virtual environment and activate it. If your command line prompt shows `(skema_env)`, the virtual environment is activated.
 
-On Windows: ``` cd path/to/skema skema_env\Scripts\activate ```
+**On Windows:**
+```
+cd path\to\your\directory
+skema_env\Scripts\activate
+```
 
-On Mac: ``` cd path/to/skema source skema_env/bin/activate ```
+**On macOS/Linux:**
+```
+cd path/to/your/directory
+source skema_env/bin/activate
+```
 
 This will activate the skema_env virtual environment, where SKeMa and its dependencies are installed, ensuring the tool runs correctly.
 
@@ -339,7 +339,6 @@ skema/
 ```
 
 ---
-
 
 ## 📜 License
 - **Code**: MIT License (see LICENSE file)
