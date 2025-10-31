@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skema-kelp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Satellite-based kelp classification from Sentinel-2 using semantic segmentation"
 readme = "README.md"
 requires-python = ">=3.8,<3.13"
