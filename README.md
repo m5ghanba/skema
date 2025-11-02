@@ -201,9 +201,11 @@ There are necessary **static files** that need to be downloaded. These are bathy
 - There are five substrate TIFF rasters (`NCC_substrate_20m.tif`, `SOG_substrate_20m.tif`, `WCVI_substrate_20m.tif`, `QCS_substrate_20m.tif`, `HG_substrate_20m.tif`), each covering a different region of the BC coast.  
 - Place them inside:  
 
-```text  
-skema/skema/static/bathy_substrate/  
 ```
+.venv/lib/python3.11/site-packages/skema/static/bathy_substrate/
+```
+
+(Adjust the Python version number and virtual-environment name as appropriate for your system — e.g., ```.venv/Lib/site-packages/skema/static/bathy_substrate/ on Windows.```)
 
 **⚠️ Note**: Static files (bathymetry and substrate) are only required when using the **full model** (`--model-type model_full`). If you plan to use only the **S2-only model** (`--model-type model_s2bandsandindices_only`), you can skip downloading these files.
 
