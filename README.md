@@ -195,7 +195,7 @@ pip install --upgrade pip setuptools wheel
 ```
 
 #### Static files  
-There are necessary **static files** that need to be manully downloaded and placed inside the corresponding directory as described below. These are bathymetry and substrate files from the whole coast of British Columbia that `skema` uses when predicting kelp on a Sentinel-2 image.  
+There are necessary **static files** that need to be manually downloaded and placed inside the corresponding directory as described below. These are bathymetry and substrate files from the whole coast of British Columbia that `skema` uses when predicting kelp on a Sentinel-2 image.  
 
 - The bathymetry file is a single TIFF raster (`Bathymetry_10m.tif`).  
 - There are five substrate TIFF rasters (`NCC_substrate_20m.tif`, `SOG_substrate_20m.tif`, `WCVI_substrate_20m.tif`, `QCS_substrate_20m.tif`, `HG_substrate_20m.tif`), each covering a different region of the BC coast.  
