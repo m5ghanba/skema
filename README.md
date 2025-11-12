@@ -37,7 +37,7 @@ If you use **SKeMa** in your research or work, please cite:
 
 ```bibtex
 @software{skema_2025,
-  author       = {Mohsen Ghanbari et al.},
+  author       = {Mohsen Ghanbari, Neil Ernst, Taylor A. Denouden, Luba Y. Reshitnyk, Piper Steffen, Alena Wachmann, Eduardo Loos, Margot Hessing-Lewis, Maycira Costa},
   title        = {SKeMa: Satellite-based Kelp Mapping using Semantic Segmentation on Sentinel-2 imagery},
   year         = 2025,
   publisher    = {Hugging Face},
