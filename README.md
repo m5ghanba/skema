@@ -53,7 +53,19 @@ If you use **SKeMa** in your research or work, please cite:
 Before you can set up SKeMa, you'll need **Python** (version 3.8 or higher) installed on your computer. Python is a free tool, and no accounts or sign-ups are required to install it. We'll install it using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps.
 
 ### Step 1: Install Python
+Before proceeding, check if you already have Python between versions 3.8 and 3.12 on your computer.
+Open a terminal (PowerShell, Command Prompt, or macOS/Linux terminal).
 
+Run:
+```
+python --version
+```
+or, on macOS/Linux, try:
+```
+python3 --version
+```
+
+If the version shown is ≥3.8, you already meet the requirement and can skip this step. Otherwise, follow the instructions below to install Python.
 #### On Windows
 1. **Check if Winget is available** (it's built into Windows 10 version 2009 or later, or Windows 11, and most modern systems have it):
    - Open PowerShell or Command Prompt.
