@@ -46,9 +46,6 @@ If you use **SKeMa** in your research or work, please cite:
 }
 ```
 
-**Plain text**:  
-Ghanbari, M., et al. (2025). *SKeMa: Satellite-based Kelp Mapping using Semantic Segmentation on Sentinel-2 imagery*. Hugging Face. https://doi.org/10.57967/hf/6790
-
 ---
 
 ## 🚀 Installation
