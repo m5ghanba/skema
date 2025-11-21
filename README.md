@@ -14,6 +14,25 @@
 
 ---
 
+## Table of Contents
+- [Quick Start (Experienced Users)](#-quick-start-experienced-users)
+- [Citation](#citation)
+- [Installation](#-installation)
+  - [Step 1: Install Python](#step-1-install-python)
+  - [Step 2: Install SKeMa](#step-2-install-skema)
+  - [Static Files](#static-files)
+  - [GPU Support](#gpu-support)
+- [Usage](#️-usage)
+  - [Activating the Virtual Environment](#activating-the-virtual-environment)
+  - [Downloading Sentinel-2 Images](#downloading-sentinel-2-images)
+  - [Running SKeMa](#running-skema)
+  - [Model Types](#model-types)
+  - [Output Files](#output-files)
+- [Project Structure](#️-project-structure)
+- [License](#-license)
+
+---
+
 ## ⚡ Quick Start (Experienced Users)
 ```bash
 pip install skema-kelp
@@ -21,7 +40,7 @@ pip install skema-kelp
 # Download static files (for model_full only) from sources listed below
 # Download Sentinel-2 imagery from https://dataspace.copernicus.eu/browser/
 
-skema --input-dir path/to/S2_scene.SAFE --output-filename output.tif
+skema --input-dir "path/to/S2_scene.SAFE" --output-filename output.tif
 
 # For help and all options
 skema --help
@@ -50,9 +69,12 @@ If you use **SKeMa** in your research or work, please cite:
 
 ## 🚀 Installation
 
-Before you can set up SKeMa, you'll need **Python** (version 3.8 or higher) installed on your computer. Python is a free tool, and no accounts or sign-ups are required to install it. We'll install it using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps.
+Before you can set up SKeMa, you'll need **Python** (version **3.8 to 3.12**) installed on your computer. Python is a free tool, and no accounts or sign-ups are required to install it. We'll install it using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps.
 
 ### Step 1: Install Python
+
+**Checking Your Current Python Version:**
+
 Before proceeding, check if you already have Python between versions 3.8 and 3.12 on your computer.
 Open a terminal (PowerShell, Command Prompt, or macOS/Linux terminal).
 
@@ -65,14 +87,15 @@ or, on macOS/Linux, try:
 python3 --version
 ```
 
-If the version shown is ≥3.8, you already meet the requirement and can skip this step. Otherwise, follow the instructions below to install Python.
+If the version shown is between 3.8 and 3.12 (e.g., Python 3.9.13, Python 3.11.5, Python 3.12.7), you already meet the requirement and can skip the installation steps below. Otherwise, follow the instructions below to install Python.
+
 #### On Windows
 1. **Check if Winget is available** (it's built into Windows 10 version 2009 or later, or Windows 11, and most modern systems have it):
    - Open PowerShell or Command Prompt.
    - Type `winget --version` and press Enter.
    - If it shows a version number (e.g., "v1.8.0"), proceed. If not (error like "winget is not recognized"), download the App Installer from the Microsoft Store (search for "App Installer") or update Windows via Settings > Update & Security > Windows Update.
 
-2. **Install Python 3.12** (the latest stable version as of October 2025; this meets the >=3.8 requirement):
+2. **Install Python 3.12.7** (the most reliable and stable subversion of Python 3.12):
    - In your terminal, run:
      ```
      winget install -e --id Python.Python.3.12
@@ -82,7 +105,12 @@ If the version shown is ≥3.8, you already meet the requirement and can skip th
    - Restart your terminal after installation.
    - Verify: Run `python --version`. It should output something like "Python 3.12.7". If not, close and reopen the terminal, or manually add Python to PATH (search online for "add Python to PATH Windows").
 
-   *Alternative if winget fails*: Download the installer from [python.org](https://www.python.org/downloads/windows/) using your browser, run it, and follow the GUI prompts (make sure to check "Add Python to PATH"). Then verify as above.
+   *Alternative if winget fails*: Download the installer directly from the Python website:
+   - For Python 3.12.7: [https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe](https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe)
+   - Run the downloaded installer.
+   - **IMPORTANT**: During installation, make sure to check the box that says **"Add Python to PATH"** at the beginning of the installation process. This option is **unchecked by default**, so you must manually select it.
+   - Follow the GUI prompts to complete the installation.
+   - Verify: Run `python --version` in a new terminal window. It should output "Python 3.12.7".
 
 #### On macOS
 1. **Install Homebrew** (a package manager for CLI installations, if you don't have it):
@@ -103,7 +131,7 @@ If the version shown is ≥3.8, you already meet the requirement and can skip th
    - This installs Python and adds it to PATH.
    - Verify: Run `python3 --version` (note: use `python3` on macOS). It should output "Python 3.12.7".
 
-   *Alternative*: Download the official installer from [python.org](https://www.python.org/downloads/macos/) using your browser, run it, and follow GUI steps.
+   *Alternative*: Download the official installer from [python.org](https://www.python.org/downloads/macos/) using your browser, run it, and follow GUI steps. **Make sure Python is added to your PATH during installation.**
 
 #### On Linux (e.g., Ubuntu/Debian; adjust for other distros like Fedora)
 1. **Update your package list**:
@@ -153,7 +181,7 @@ Now, navigate to a directory where you want to work with SKeMa, then run:
 #### Option 1: Install with pip (Recommended)
 
 ```bash
-# Create a virtual environment (optional but recommended)
+# Create a virtual environment 
 python -m venv skema_env
 
 # Activate the virtual environment
@@ -203,18 +231,19 @@ If you encounter packaging errors, make sure your pip and build tools are up to 
 pip install --upgrade pip setuptools wheel
 ```
 
-#### Static files  
+### Static files  
 There are necessary **static files** that need to be manually downloaded and placed inside the corresponding directory as described below. These are bathymetry and substrate files from the whole coast of British Columbia that `skema` uses when predicting kelp on a Sentinel-2 image.  
 
 - The bathymetry file is a single TIFF raster (`Bathymetry_10m.tif`).  
 - There are five substrate TIFF rasters (`NCC_substrate_20m.tif`, `SOG_substrate_20m.tif`, `WCVI_substrate_20m.tif`, `QCS_substrate_20m.tif`, `HG_substrate_20m.tif`), each covering a different region of the BC coast.  
-- Place all six static file inside folder (these directories are where the package files reside when installed via `pip`):
+
+When SKeMa is installed via `pip`, there is a folder named `bathy_substrate` located in the following directory. Place all six static files inside this folder:
 
 On Windows:
 ```
 skema_env\Lib\site-packages\skema\static\bathy_substrate
 ```
-On macOS/Linux::
+On macOS/Linux:
 ```
 skema_env/lib/python3.11/site-packages/skema/static/bathy_substrate/
 ```
@@ -235,9 +264,9 @@ skema/static/bathy_substrate/
 - Shallow substrate model (20m) of the Pacific Canadian coast (Haggarty et al., 2020):  
   https://osdp-psdo.canada.ca/dp/en/search/metadata/NRCAN-FGP-1-b100cf6c-7818-4748-9960-9eab2aa6a7a0  
 
-If you encounter any issues downloading these files, please don’t hesitate to contact us for assistance.
+If you encounter any issues downloading these files, please don't hesitate to contact us for assistance.
 
-#### GPU support  
+### GPU support  
 
 For GPU users, install CUDA-supported PyTorch that matches your CUDA Toolkit. Check your CUDA version with:  
 
@@ -263,38 +292,93 @@ Skip this step if you don't have a GPU.
 
 ## 🛰️ Usage
 
-To use SKeMa after the initial installation, you must activate its virtual environment each time you start a new session (if you created one). Navigate to the directory where you created the virtual environment and activate it. If your command line prompt shows `(skema_env)`, the virtual environment is activated.
+### Activating the Virtual Environment
 
-**On Windows:**
-```
-cd path\to\your\directory
-skema_env\Scripts\activate
-```
+To use SKeMa after the initial installation, you must activate its virtual environment each time you start a new session (if you created one). Follow these steps each time you want to run the tool:
 
-**On macOS/Linux:**
-```
-cd path/to/your/directory
-source skema_env/bin/activate
-```
+1. **Open a terminal** (Command Prompt, PowerShell, or Terminal).
+2. **Navigate to the directory** where you created the virtual environment:
+   - **On Windows:**
+     ```
+     cd path\to\your\directory
+     ```
+   - **On macOS/Linux:**
+     ```
+     cd path/to/your/directory
+     ```
+3. **Activate the virtual environment:**
+   - **On Windows:**
+     ```
+     skema_env\Scripts\activate
+     ```
+   - **On macOS/Linux:**
+     ```
+     source skema_env/bin/activate
+     ```
+4. **Run SKeMa** using the commands described below.
 
-This will activate the skema_env virtual environment, where SKeMa and its dependencies are installed, ensuring the tool runs correctly.
+If your command line prompt shows `(skema_env)`, the virtual environment is activated and you're ready to proceed.
+
+### Downloading Sentinel-2 Images
 
 SKeMa uses Sentinel-2 satellite images, which can be downloaded from the [Copernicus Browser](https://dataspace.copernicus.eu/browser/). To access these images, you need to create a free account on the Copernicus Data Space website:
 - Visit [https://dataspace.copernicus.eu/](https://dataspace.copernicus.eu/) and click "Sign Up" to create an account.
 - Follow the instructions to register with your email and set a password.
 - Once logged in, use the Copernicus Browser to search for and download Sentinel-2 images, which will be provided as `.zip` files.
 
+#### Sentinel-2 Image Download Instructions
+
+Follow these steps to download Sentinel-2 images from the Copernicus Browser:
+
+1. **Go to the Copernicus Browser**: Navigate to [https://browser.dataspace.copernicus.eu/](https://browser.dataspace.copernicus.eu/)
+
+2. **Register**: If you haven't already, create a free account by clicking on the "Register" option.
+
+3. **Sign in**: Log in to your account using your credentials.
+
+4. **Create an area of interest**: Click on the top right option **"Create an area of interest"** (the pentagon shape icon).
+   
+   ![Create Area of Interest](docs/images/area_of_interest.png)
+
+5. **Draw your polygon**: Click on the option **"Draw polygon of interest..."** (the pencil shape icon).
+   
+   ![Draw AOI](docs/images/draw_aoi.png)
+
+6. **Define your area**: Draw a polygon around your area of interest by clicking on the map to create points. Close the polygon by clicking on the first point you placed.
+   
+   ![AOI Drawn](docs/images/aoi_drawn.png)
+
+7. **Set parameters and search**: 
+   - Select the **Time Range** option and set the dates in the **"From"** and **"Until"** fields.
+   - Optionally, set the **cloud coverage** filter.
+   - Click on **"Find products within selected time range"**.
+   
+   ![Find Products](docs/images/find_products.png)
+
+8. **Choose your Sentinel-2 scene**: From the map, select the desired Sentinel-2 scene by clicking on it.
+   
+   ![Choose Scene](docs/images/choose_the_favorite_scene.png)
+
+9. **Preview and download**: 
+   - Click on the **"i"** option to view a preview of the image and quick information.
+   - Click on the **download icon** (located at the bottom right) to download the scene.
+   
+   ![Thumbnail and Download](docs/images/thumbnail_and_download.png)
+
+### Running SKeMa
+
 Now, you can run SKeMa on a new Sentinel-2 image:
 
 ```bash  
-skema --input-dir path/to/sentinel2/safe/folder --output-filename output.tif  
+skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif  
 ```
 
 - The first path (`--input-dir`) must be the full path to the `.SAFE` folder.  
   - Sentinel-2 images from the Copernicus Browser come as `.zip` files. Extract them first.  
-  - Then, pass the full path to the `.SAFE` folder (e.g., `C:\...\S2C_MSIL2A_20250715T194921_N0511_R085_T09UUU_20250716T001356.SAFE`).  
+  - Then, pass the full path to the `.SAFE` folder (e.g., `"C:\...\S2C_MSIL2A_20250715T194921_N0511_R085_T09UUU_20250716T001356.SAFE"`).
+  - **Note**: If your path or output filename contains spaces, enclose it in double quotation marks (as shown in the example).
 
-- The second parameter (`--output-filename`) is the name of the output file (e.g., `output.tif`).  
+- The second parameter (`--output-filename`) is the name of the output file (e.g., `output.tif`). You only need to provide the filename, not the full directory path. The output will be saved in a folder created alongside the `.SAFE` folder.
 
 ### Model Types
 
@@ -306,12 +390,14 @@ SKeMa supports two model types:
 
 To specify the model type, use the `--model-type` flag:
 
+**Note**: Scroll right to see the complete command if it extends beyond your screen.
+
 ```bash
 # Using the full model (default - includes bathymetry and substrate)
-skema --input-dir path/to/sentinel2/safe/folder --output-filename output.tif --model-type model_full
+skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_full
 
 # Using S2-only model (no bathymetry/substrate required)
-skema --input-dir path/to/sentinel2/safe/folder --output-filename output.tif --model-type model_s2bandsandindices_only
+skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_s2bandsandindices_only
 ```
 
 If `--model-type` is not specified, the tool defaults to `model_full`.

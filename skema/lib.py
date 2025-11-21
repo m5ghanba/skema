@@ -928,104 +928,52 @@ class DatasetInference(SatelliteDataset):
             self.image[:, :, 8] = (nir / (green + eps)) - 1  # Chlorophyll Index
             self.image[:, :, 9] = (re - red) / (re + red + eps)  # NDVI-RE
 
+
     def generate_tiles(self, image):
         """Generator that yields one tile and its coordinates at a time."""
         h, w, c = image.shape
         tile_size = self.tile_size
         overlap = self.overlap
         step_size = int(tile_size * (1 - overlap))
-    
-        # Main tiling loop
-        for i in range(0, h - tile_size + 1, step_size):
-            for j in range(0, w - tile_size + 1, step_size):
-                tile = image[i:i+tile_size, j:j+tile_size]
-                if self.mean_per_channel is not None and self.std_per_channel is not None:
-                    tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
-                yield tile, (i, j)
-    
-        # Edge padding - handle incomplete tiles at edges
-        edge_positions = []
-        
-        # Right edge tiles
-        if w % step_size != 0 or w - tile_size < 0:
-            for i in range(0, h - tile_size + 1, step_size):
-                j_start = max(0, w - tile_size)
-                if j_start not in [j for _, j in edge_positions if i == i]:  # Avoid duplicates
-                    edge_positions.append((i, j_start))
-        
-        # Bottom edge tiles
-        if h % step_size != 0 or h - tile_size < 0:
-            for j in range(0, w - tile_size + 1, step_size):
-                i_start = max(0, h - tile_size)
-                if i_start not in [i for i, _ in edge_positions if j == j]:  # Avoid duplicates
-                    edge_positions.append((i_start, j))
-        
-        # Bottom-right corner tile
-        if (h % step_size != 0 or h - tile_size < 0) and (w % step_size != 0 or w - tile_size < 0):
-            i_start = max(0, h - tile_size)
-            j_start = max(0, w - tile_size)
-            if (i_start, j_start) not in edge_positions:
-                edge_positions.append((i_start, j_start))
-        
-        # Generate edge tiles
-        for i, j in edge_positions:
-            tile = image[i:min(i+tile_size, h), j:min(j+tile_size, w)]
-            tile = self.pad_tile(tile)
-            if self.mean_per_channel is not None and self.std_per_channel is not None:
-                tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
-            yield tile, (i, j)
 
-    def generate_tiles_not_weighted(self, image):
-        """Generator that yields one tile and its coordinates at a time."""
-        h, w, c = image.shape
-        tile_size = self.tile_size
-        overlap = self.overlap
-        step_size = int(tile_size * (1 - overlap))
-    
-        # Main tiling loop
-        for i in range(0, h - tile_size + 1, step_size):
-            for j in range(0, w - tile_size + 1, step_size):
-                tile = image[i:i+tile_size, j:j+tile_size]
-                if self.mean_per_channel is not None and self.std_per_channel is not None:
-                    tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
-                yield tile, (i, j)
-    
-        # Edge padding
-        for i in range(h - tile_size, h, step_size):
-            for j in range(w - tile_size, w, step_size):
-                tile = self.pad_tile_not_weighted(image[i:min(i+tile_size, h), j:min(j+tile_size, w)])
-                if self.mean_per_channel is not None and self.std_per_channel is not None:
-                    tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
-                yield tile, (i, j)
-
-    def pad_tile_not_weighted(self, tile):
-        """Apply padding to the tile if it's smaller than the tile_size."""
-        pad_h = max(0, self.tile_size - tile.shape[0])
-        pad_w = max(0, self.tile_size - tile.shape[1])
-        # return np.pad(tile, ((0, pad_h), (0, pad_w), (0, 0)), mode='constant', constant_values=0)
-        return np.pad(tile, ((0, pad_h), (0, pad_w), (0, 0)), mode='reflect')
-
-    def pad_tile(self, tile):
-        """Apply intelligent padding to the tile if it's smaller than the tile_size."""
-        pad_h = max(0, self.tile_size - tile.shape[0])
-        pad_w = max(0, self.tile_size - tile.shape[1])
-        
-        if pad_h == 0 and pad_w == 0:
-            return tile
-            
-        # Use the specified padding mode
-        if self.padding_mode == 'reflect':
-            # Handle cases where tile is too small for reflect padding
-            if tile.shape[0] == 1 and pad_h > 0:
-                mode = 'edge'  # Fall back to edge for very small tiles
-            elif tile.shape[1] == 1 and pad_w > 0:
-                mode = 'edge'
-            else:
-                mode = 'reflect'
+        # Integer ceil division: (a + b - 1) // b  does the same as math.ceil(a / b)
+        if h <= tile_size:
+            tiles_y = 1
         else:
-            mode = self.padding_mode
-            
-        return np.pad(tile, ((0, pad_h), (0, pad_w), (0, 0)), mode=mode)
+            tiles_y = ((h - tile_size) + step_size - 1) // step_size + 1
+
+        if w <= tile_size:
+            tiles_x = 1
+        else:
+            tiles_x = ((w - tile_size) + step_size - 1) // step_size + 1
+
+        # Generate ALL tiles with consistent grid alignment
+        for y in range(tiles_y):
+            for x in range(tiles_x):
+                i = y * step_size          # top-left row (can be >= h for the last tiles)
+                j = x * step_size          # top-left col (can be >= w for the last tiles)
+
+                i_end = min(i + tile_size, h)
+                j_end = min(j + tile_size, w)
+
+                tile = image[i:i_end, j:j_end]
+
+                # Pad to full tile_size with zeros if we are on the border
+                actual_h, actual_w = tile.shape[:2]
+                if actual_h < tile_size or actual_w < tile_size:
+                    pad_bottom = tile_size - actual_h
+                    pad_right = tile_size - actual_w
+                    tile = np.pad(tile,
+                                ((0, pad_bottom), (0, pad_right), (0, 0)),
+                                mode='constant',
+                                constant_values=0)
+
+                # Optional normalization
+                if self.mean_per_channel is not None and self.std_per_channel is not None:
+                    tile = normalize_tile_mean_std(tile, self.mean_per_channel, self.std_per_channel)
+
+                yield tile, (i, j)
+
 
     def _process_batch_not_weighted(self, tiles, coords, predictions):
         """Not weighted - Run inference on a batch of tiles and write results into full image."""
@@ -1157,10 +1105,10 @@ class DatasetInference(SatelliteDataset):
         predictions = np.zeros_like(self.image[:, :, 0], dtype=np.uint8)
 
         # First pass: count tiles
-        tile_count = sum(1 for _ in self.generate_tiles_not_weighted(self.image))
+        tile_count = sum(1 for _ in self.generate_tiles(self.image))
         
         # Second pass: process tiles
-        tile_generator = self.generate_tiles_not_weighted(self.image)
+        tile_generator = self.generate_tiles(self.image)
         batch_tiles = []
         batch_coords = []
         tiles_processed = 0
