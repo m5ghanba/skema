@@ -352,6 +352,7 @@ Follow these steps to download Sentinel-2 images from the Copernicus Browser:
    - Select the **Time Range** option and set the dates in the **"From"** and **"Until"** fields.
    - Optionally, set the **cloud coverage** filter.
    - Click on **"Find products within selected time range"**.
+   - Verify that **Sentinel-2 L2A** is selected as the data level (default setting).
    
    ![Find Products](docs/images/find_products.png)
 
