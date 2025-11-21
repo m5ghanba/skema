@@ -321,14 +321,11 @@ If your command line prompt shows `(skema_env)`, the virtual environment is acti
 
 ### Downloading Sentinel-2 Images
 
-SKeMa uses Sentinel-2 satellite images, which can be downloaded from the [Copernicus Browser](https://dataspace.copernicus.eu/browser/). To access these images, you need to create a free account on the Copernicus Data Space website:
-- Visit [https://dataspace.copernicus.eu/](https://dataspace.copernicus.eu/) and click "Sign Up" to create an account.
-- Follow the instructions to register with your email and set a password.
-- Once logged in, use the Copernicus Browser to search for and download Sentinel-2 images, which will be provided as `.zip` files.
+SKeMa uses Sentinel-2 satellite images, which can be downloaded from the [Copernicus Browser](https://dataspace.copernicus.eu/browser/). You will need a free account to access and download these images, which are provided as `.zip` files.
 
 #### Sentinel-2 Image Download Instructions
 
-Follow these steps to download Sentinel-2 images from the Copernicus Browser:
+Follow these steps to download Sentinel-2 images:
 
 1. **Go to the Copernicus Browser**: Navigate to [https://browser.dataspace.copernicus.eu/](https://browser.dataspace.copernicus.eu/)
 
