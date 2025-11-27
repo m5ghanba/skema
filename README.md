@@ -266,6 +266,7 @@ skema/static/bathy_substrate/
 
 If you encounter any issues downloading these files, please don't hesitate to contact us for assistance.
 
+
 ### GPU support  
 
 For GPU users, install CUDA-supported PyTorch that matches your CUDA Toolkit. Check your CUDA version with:  
@@ -277,14 +278,16 @@ nvcc --version
 For CUDA 12.1:  
 
 ```bash  
-pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121  
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121  
 ```
 
 For CUDA 11.8:  
 
 ```bash  
-pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118  
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118  
 ```
+
+This will install the latest compatible versions of PyTorch, torchvision, and torchaudio for your CUDA version.
 
 Skip this step if you don't have a GPU.
 
