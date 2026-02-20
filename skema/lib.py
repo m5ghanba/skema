@@ -740,11 +740,12 @@ def load_model(model_type='model_full'):
     """Load the appropriate model based on model_type."""
     if model_type == 'model_full':
         in_channels = 12
-        MODEL_URL = "https://github.com/m5ghanba/skema/releases/download/v0.1.0-alpha/model.pth"
+        MODEL_URL = "https://github.com/m5ghanba/skema/releases/download/v0.2.0/model.pth"
+        
         model_filename = "model.pth"
     elif model_type == 'model_s2bandsandindices_only':
         in_channels = 10
-        MODEL_URL = "https://github.com/m5ghanba/skema/releases/download/v0.1.0-alpha/modelS2Only.pth"
+        MODEL_URL = "https://github.com/m5ghanba/skema/releases/download/v0.2.0/modelS2Only.pth"
         model_filename = "modelS2Only.pth"
     else:
         raise ValueError(f"Invalid model_type '{model_type}'")
@@ -901,25 +902,70 @@ class DatasetInference(SatelliteDataset):
             self.image[:, :, 4] = image2[:, :, 0]
         
         # Compute indices directly into self.image
-        self._compute_all_indices()
+        self._compute_slope_and_all_indices()
         
         return self.image, metadata
 
-    def _compute_all_indices(self):
+    def calculate_slope(self, bathymetry, cell_size=1.0):
+        """
+        Vectorized Horn slope calculation.
+        Produces the same values as the loop-based version.
+        """
+        bathy = bathymetry.astype(np.float32)
+    
+        H, W = bathy.shape
+        slope = np.zeros((H, W), dtype=np.float32)
+    
+        # Extract shifted views (a–i)
+        a = bathy[:-2, :-2]
+        b = bathy[:-2, 1:-1]
+        c = bathy[:-2, 2:]
+        d = bathy[1:-1, :-2]
+        f = bathy[1:-1, 2:]
+        g = bathy[2:, :-2]
+        h = bathy[2:, 1:-1]
+        i = bathy[2:, 2:]
+    
+        # Mask: any NaN in the 3x3 window → invalid
+        invalid = (
+            np.isnan(a) | np.isnan(b) | np.isnan(c) |
+            np.isnan(d) | np.isnan(f) |
+            np.isnan(g) | np.isnan(h) | np.isnan(i)
+        )
+    
+        dz_dx = ((c + 2*f + i) - (a + 2*d + g)) / (8.0 * cell_size)
+        dz_dy = ((g + 2*h + i) - (a + 2*b + c)) / (8.0 * cell_size)
+    
+        slope_inner = np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2)))
+    
+        # Apply NaN rule (same behavior as your loop)
+        slope_inner[invalid] = 0.0
+    
+        # Write back to full array (edges remain 0)
+        slope[1:-1, 1:-1] = slope_inner
+    
+        return slope
+
+    def _compute_slope_and_all_indices(self):
         """Compute all spectral indices directly into self.image."""
         green = self.image[:, :, 1]
         red = self.image[:, :, 2]
         nir = self.image[:, :, 3]
         re = self.image[:, :, 4]
+
         eps = 1e-10
         
         if self.model_type == 'model_full':
-            # Indices start at channel 7
-            self.image[:, :, 7] = (nir - red) / (nir + red + eps)  # NDVI
-            self.image[:, :, 8] = (green - nir) / (green + nir + eps)  # NDWI
-            self.image[:, :, 9] = (nir - green) / (nir + green + eps)  # GNDVI
-            self.image[:, :, 10] = (nir / (green + eps)) - 1  # Chlorophyll Index
-            self.image[:, :, 11] = (re - red) / (re + red + eps)  # NDVI-RE
+            # Calculate slope
+            bathy = self.image[:, :, 6]
+            slope = self.calculate_slope(bathy)
+            self.image[:, :, 7] = slope
+            # Indices start at channel 8
+            self.image[:, :, 8] = (nir - red) / (nir + red + eps)  # NDVI
+            self.image[:, :, 9] = (green - nir) / (green + nir + eps)  # NDWI
+            self.image[:, :, 10] = (nir - green) / (nir + green + eps)  # GNDVI
+            self.image[:, :, 11] = (nir / (green + eps)) - 1  # Chlorophyll Index
+            self.image[:, :, 12] = (re - red) / (re + red + eps)  # NDVI-RE
         else:  # model_s2bandsandindices_only
             # Indices start at channel 5
             self.image[:, :, 5] = (nir - red) / (nir + red + eps)  # NDVI
@@ -1222,17 +1268,30 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
         output_folder = os.path.join(parent_dir, safe_basename)
         os.makedirs(output_folder, exist_ok=True)
 
-        # Step 1: Extract S2 bands
-        b2348_file, b5678a1112_file = extract_bands_to_geotiffs(input_dir, output_folder)
-        if not b2348_file:
-            raise RuntimeError(f"Failed to extract bands for {input_dir}")
+        # Step 1: Extract S2 bands (skip if already extracted)
+        b2348_file = os.path.join(output_folder, f"{safe_basename}_B2B3B4B8.tif")
+        b5678a1112_file = os.path.join(output_folder, f"{safe_basename}_B5B6B7B8A_B11B12.tif")
 
-        # Steps 2-4: Only for model_full
+        if os.path.exists(b2348_file) and os.path.exists(b5678a1112_file):
+            console = Console()
+            console.print("[yellow]⚠ Band TIFFs already exist, skipping extraction.[/yellow]")
+        else:
+            b2348_file, b5678a1112_file = extract_bands_to_geotiffs(input_dir, output_folder)
+            if not b2348_file:
+                raise RuntimeError(f"Failed to extract bands for {input_dir}")
+
+        # Steps 2-4: Only for model_full (skip if bathymetry and substrate already exist)
         if model_type == 'model_full':
-            warp_bathy_and_subs(parent_dir, safe_basename)
-            merge_substrate_files_single(output_folder)
-            apply_fill_nodata_single(output_folder)
+            bathy_file = os.path.join(output_folder, f"{safe_basename}_Bathymetry.tif")
+            subs_file = os.path.join(output_folder, f"{safe_basename}_Substrate.tif")
 
+            if os.path.exists(bathy_file) and os.path.exists(subs_file):
+                console = Console()
+                console.print("[yellow]⚠ Bathymetry and substrate TIFFs already exist, skipping alignment and merging.[/yellow]")
+            else:
+                warp_bathy_and_subs(parent_dir, safe_basename)
+                merge_substrate_files_single(output_folder)
+                apply_fill_nodata_single(output_folder)
         input_dir = output_folder
 
     # Create dataset and run inference
