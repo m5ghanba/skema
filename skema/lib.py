@@ -1,3 +1,5 @@
+__version__ = "0.2.0"
+
 import rasterio
 
 import numpy as np 
@@ -739,14 +741,13 @@ class segModel(pl.LightningModule):
 def load_model(model_type='model_full'):
     """Load the appropriate model based on model_type."""
     if model_type == 'model_full':
-        in_channels = 12
-        MODEL_URL = "https://github.com/m5ghanba/skema/releases/download/v0.2.0/model.pth"
-        
-        model_filename = "model.pth"
+        in_channels = 13
+        MODEL_URL = "https://github.com/m5ghanba/skema/releases/download/v0.2.0/model.pth" 
+        model_filename = f"model_v{__version__}.pth"
     elif model_type == 'model_s2bandsandindices_only':
         in_channels = 10
         MODEL_URL = "https://github.com/m5ghanba/skema/releases/download/v0.2.0/modelS2Only.pth"
-        model_filename = "modelS2Only.pth"
+        model_filename = f"modelS2Only_v{__version__}.pth"
     else:
         raise ValueError(f"Invalid model_type '{model_type}'")
     
@@ -889,8 +890,8 @@ class DatasetInference(SatelliteDataset):
             with rasterio.open(self.bathymetry_path) as src4:
                 bathymetry = src4.read(1).astype(np.float32)[:, :, np.newaxis]
             
-            # Allocate image array with 12 channels (7 base + 5 indices)
-            self.image = np.empty((image1.shape[0], image1.shape[1], 12), dtype=np.float32)
+            # Allocate image array with 12 channels (8 base + 5 indices)
+            self.image = np.empty((image1.shape[0], image1.shape[1], 13), dtype=np.float32)
             self.image[:, :, 0:4] = image1
             self.image[:, :, 4] = image2[:, :, 0]
             self.image[:, :, 5] = substrate[:, :, 0]
@@ -1274,7 +1275,7 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
 
         if os.path.exists(b2348_file) and os.path.exists(b5678a1112_file):
             console = Console()
-            console.print("[yellow]⚠ Band TIFFs already exist, skipping extraction.[/yellow]")
+            console.print("[yellow] Band TIFFs already exist, skipping extraction.[/yellow]")
         else:
             b2348_file, b5678a1112_file = extract_bands_to_geotiffs(input_dir, output_folder)
             if not b2348_file:
@@ -1287,7 +1288,7 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
 
             if os.path.exists(bathy_file) and os.path.exists(subs_file):
                 console = Console()
-                console.print("[yellow]⚠ Bathymetry and substrate TIFFs already exist, skipping alignment and merging.[/yellow]")
+                console.print("[yellow] Bathymetry and substrate TIFFs already exist, skipping alignment and merging.[/yellow]") #⚠
             else:
                 warp_bathy_and_subs(parent_dir, safe_basename)
                 merge_substrate_files_single(output_folder)
