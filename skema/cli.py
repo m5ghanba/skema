@@ -15,7 +15,7 @@ from skema.lib import segment
 @click.option('--model-type', 
               type=click.Choice(['model_full', 'model_s2bandsandindices_only'], case_sensitive=False),
               default='model_full',
-              help='Model type to use: "model_full" (with substrate/bathymetry) or "model_s2bandsandindices_only" (S2 bands and indices only). Default: model_full.')
+              help='Model type to use: "model_full" (with substrate, bathymetry, and slope) or "model_s2bandsandindices_only" (S2 bands and indices only). Default: model_full.')
 def main(input_dir, output_filename, model_type):
     """Segment a Sentinel-2 scene and output a kelp mask."""
     
