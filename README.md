@@ -69,7 +69,7 @@ If you use **SKeMa** in your research or work, please cite:
 
 ## 🚀 Installation
 
-Before you can set up SKeMa, you'll need **Python** (version **3.8 to 3.12**) installed on your computer. Python is a free tool, and no accounts or sign-ups are required to install it. We'll install it using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps.
+Before you can set up SKeMa, you'll need **Python** (version **3.8 to 3.12**) installed on your computer. Python is a free tool, and no accounts or sign-ups are required to install it. We'll install it using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps. In some cases, however, you may need to use Command Prompt instead of PowerShell because PowerShell can handle command resolution and PATH variables differently, which may prevent it from recognizing Python even if it is installed. Additionally, if Python was installed only for your user account (and not system-wide), it may only be accessible from a normal Command Prompt session rather than one opened as Administrator, since elevated terminals can use a different set of environment variables.
 
 ### Step 1: Install Python
 
@@ -103,14 +103,18 @@ If the version shown is between 3.8 and 3.12 (e.g., Python 3.9.13, Python 3.11.5
    - This downloads and installs Python automatically. It may take a few minutes.
    - **Important**: During installation (if prompted), ensure "Add Python to PATH" is selected (it usually is by default with winget).
    - Restart your terminal after installation.
-   - Verify: Run `python --version`. It should output something like "Python 3.12.7". If not, close and reopen the terminal, or manually add Python to PATH (search online for "add Python to PATH Windows").
+   - Verify: 
+      -Run `python --version`. It should output something like "Python 3.12.7". If not, close and reopen the terminal, or manually add Python to PATH (search online for "add Python to PATH Windows").
+      -⚠️ Note: You may need to run Command Prompt (not Windows PowerShell) and open it normally (not as Administrator) because PowerShell and elevated terminals can handle PATH variables differently, which may prevent Python from being recognized.
 
    *Alternative if winget fails*: Download the installer directly from the Python website:
    - For Python 3.12.7: [https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe](https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe)
    - Run the downloaded installer.
    - **IMPORTANT**: During installation, make sure to check the box that says **"Add Python to PATH"** at the beginning of the installation process. This option is **unchecked by default**, so you must manually select it.
    - Follow the GUI prompts to complete the installation.
-   - Verify: Run `python --version` in a new terminal window. It should output "Python 3.12.7".
+   - Verify: 
+      -Run `python --version` in a new terminal window. It should output "Python 3.12.7".
+      -⚠️ Note: You may need to run Command Prompt (not Windows PowerShell) and open it normally (not as Administrator) because PowerShell and elevated terminals can handle PATH variables differently, which may prevent Python from being recognized.
 
 #### On macOS
 1. **Install Homebrew** (a package manager for CLI installations, if you don't have it):
