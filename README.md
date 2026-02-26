@@ -370,20 +370,56 @@ Follow these steps to download Sentinel-2 images:
    
    ![Thumbnail and Download](docs/images/thumbnail_and_download.png)
 
+
+Readme section · MD
+Copy
+
 ### Running SKeMa
 
-Now, you can run SKeMa on a new Sentinel-2 image:
+SKeMa can be run on a single Sentinel-2 scene or on a directory of multiple scenes at once.
+
+#### Single Scene
 
 ```bash  
-skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif  
+skema --input-dir "path/to/sentinel2/scene.SAFE" --output-filename output.tif  
 ```
 
-- The first path (`--input-dir`) must be the full path to the `.SAFE` folder.  
+- `--input-dir` must be the full path to the `.SAFE` folder.  
   - Sentinel-2 images from the Copernicus Browser come as `.zip` files. Extract them first.  
   - Then, pass the full path to the `.SAFE` folder (e.g., `"C:\...\S2C_MSIL2A_20250715T194921_N0511_R085_T09UUU_20250716T001356.SAFE"`).
   - **Note**: If your path or output filename contains spaces, enclose it in double quotation marks (as shown in the example).
 
-- The second parameter (`--output-filename`) is the name of the output file (e.g., `output.tif`). You only need to provide the filename, not the full directory path. The output will be saved in a folder created alongside the `.SAFE` folder.
+- `--output-filename` is the name of the output file (e.g., `output.tif`). You only need to provide the filename, not the full directory path. The output will be saved in a folder created alongside the `.SAFE` folder.
+
+#### Batch Mode (Multiple Scenes + Mosaic)
+
+If you have multiple Sentinel-2 scenes to process, use the `--batch-dir` flag instead of running the tool repeatedly. Place all your unzipped `.SAFE` folders inside a single directory and point `--input-dir` to that directory:
+
+```bash
+skema --input-dir "path/to/folder/with/safe/files/" --output-filename output.tif --batch-dir
+```
+
+SKeMa will:
+1. Detect all `.SAFE` folders inside the directory automatically.
+2. Process each scene individually, exactly as in single-scene mode.
+3. Save each scene's prediction inside a subfolder named after that scene. The output filename will be the scene name with your `--output-filename` value appended as a suffix. For example, if the scene is `S2B_MSIL2A_20220806T191919_N0510_R099_T10UCV_20240718T204439.SAFE` and `--output-filename` is `output.tif`, the prediction will be saved as:
+   ```
+   path/to/folder/with/safe/files/
+   └── S2B_MSIL2A_20220806T191919_N0510_R099_T10UCV_20240718T204439/
+       ├── S2B_MSIL2A_20220806T191919_N0510_R099_T10UCV_20240718T204439_B2B3B4B8.tif
+       ├── S2B_MSIL2A_20220806T191919_N0510_R099_T10UCV_20240718T204439_B5B6B7B8A_B11B12.tif
+       ├── ...
+       └── S2B_MSIL2A_20220806T191919_N0510_R099_T10UCV_20240718T204439_output.tif
+   ```
+4. After all scenes are processed, generate a single mosaic by merging all predictions into one GeoTIFF saved as `mosaic_kelp_map.tif` in the input directory:
+   ```
+   path/to/folder/with/safe/files/
+   ├── S2B_MSIL2A_.../
+   ├── S2B_MSIL2A_.../
+   └── mosaic_kelp_map.tif   ← combined prediction for all scenes
+   ```
+
+The mosaic is reprojected to BC Albers (EPSG:3005) at 10 m resolution. Overlapping pixels between scenes are resolved by taking the maximum value, meaning a pixel is classified as kelp if any contributing scene predicted kelp there.
 
 ### Model Types
 
@@ -403,13 +439,18 @@ skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif -
 
 # Using S2-only model (no bathymetry/substrate required)
 skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_s2bandsandindices_only
+
+# Batch mode also supports --model-type
+skema --input-dir "path/to/folder/with/safe/files/" --output-filename output.tif --batch-dir --model-type model_s2bandsandindices_only
 ```
 
 If `--model-type` is not specified, the tool defaults to `model_full`.
 
 ### Output Files
 
-After running, the tool generates a folder with the same name as the `.SAFE` file. Inside this folder, you'll find:
+#### Single Scene
+
+After running, the tool generates a folder with the same name as the `.SAFE` file (without the `.SAFE` extension), located alongside it. Inside this folder, you'll find:
 
 **For `model_full`:**
 1. **`<SAFE_name>_B2B3B4B8.tif`**: a 10 m resolution, 4-band GeoTIFF containing Sentinel-2 bands B02 (Blue), B03 (Green), B04 (Red), and B08 (Near-Infrared).  
@@ -423,6 +464,11 @@ After running, the tool generates a folder with the same name as the `.SAFE` fil
 2. **`<SAFE_name>_B5B6B7B8A_B11B12.tif`**: a 20 m resolution, 6-band GeoTIFF containing Sentinel-2 bands B05, B06, B07, B8A, B11, and B12.  
 3. **`output.tif`** (or the filename you specify): a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.
 
+#### Batch Mode
+
+In addition to the per-scene output folders described above (with `<SAFE_name>_output.tif` inside each), batch mode produces one additional file in the input directory:
+
+- **`mosaic_kelp_map.tif`**: a single binary GeoTIFF mosaic merging all scene predictions, in BC Albers projection (EPSG:3005) at 10 m resolution.
 ---
 
 ## ⚙️ Project Structure

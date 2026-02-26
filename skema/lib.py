@@ -1,4 +1,4 @@
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 import rasterio
 
@@ -29,12 +29,13 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from importlib.resources import files
 
-from rasterio.warp import reproject, Resampling
-from rasterio.transform import from_bounds
+from rasterio.warp import reproject, Resampling, transform_bounds
+from rasterio.transform import from_bounds as rasterio_from_bounds
 from rich.console import Console
 
 
 from rasterio.enums import Resampling
+
 
 # print(torch.__version__)
 # print(torch.version.cuda)  # Should print the version of CUDA PyTorch is using
@@ -202,7 +203,7 @@ def warp_bathy_and_subs(safe_folder_root, basename):
 
                 width = int((bounds.right - bounds.left) / 10)
                 height = int((bounds.top - bounds.bottom) / 10)
-                transform = from_bounds(bounds.left, bounds.bottom, bounds.right, bounds.top, width, height)
+                transform = rasterio_from_bounds(bounds.left, bounds.bottom, bounds.right, bounds.top, width, height)
 
                 with rasterio.open(input_file_path) as src:
                     out_data = np.empty((height, width), dtype=src.dtypes[0])
@@ -329,6 +330,79 @@ def apply_fill_nodata_single(safe_output_dir, fill_value_subs=0, fill_value_bath
     return subs_file, bathy_file
 
 
+def create_mosaic(tif_paths, output_path, target_resolution_meters=10):
+    """
+    Create a maximum-value mosaic from a list of kelp prediction GeoTIFFs,
+    reprojected to BC Albers (EPSG:3005) at a fixed resolution.
+
+    Overlapping pixels keep the maximum value (i.e. a pixel is kelp=1 if
+    ANY contributing scene predicted kelp there).
+
+    Args:
+        tif_paths (list[str]): Paths to the per-scene prediction TIFFs.
+        output_path (str): Where to save mosaic_kelp_map.tif.
+        target_resolution_meters (float): Output pixel size in metres (default 10).
+    """
+
+    console = Console()
+
+    # ── 1. Collect bounds of every file reprojected to BC Albers ──────────
+    target_crs = 'EPSG:3005'
+    all_bounds = []
+
+    valid_paths = [p for p in tif_paths if os.path.exists(p)]
+    if not valid_paths:
+        console.print("[red]No valid prediction TIFFs found – mosaic skipped.[/red]")
+        return
+
+    for p in valid_paths:
+        with rasterio.open(p) as src:
+            if str(src.crs) == target_crs:
+                all_bounds.append(src.bounds)
+            else:
+                all_bounds.append(transform_bounds(src.crs, target_crs, *src.bounds))
+
+    min_x = min(b[0] for b in all_bounds)
+    min_y = min(b[1] for b in all_bounds)
+    max_x = max(b[2] for b in all_bounds)
+    max_y = max(b[3] for b in all_bounds)
+
+    # ── 2. Build output canvas ─────────────────────────────────────────────
+    width  = int(np.ceil((max_x - min_x) / target_resolution_meters))
+    height = int(np.ceil((max_y - min_y) / target_resolution_meters))
+    mosaic_transform = rasterio_from_bounds(min_x, min_y, max_x, max_y, width, height)
+    mosaic = np.zeros((height, width), dtype=np.uint8)
+
+    # ── 3. Reproject & accumulate with maximum ─────────────────────────────
+    console.print(f"[cyan]Building mosaic from {len(valid_paths)} scene(s)...[/cyan]")
+    for p in valid_paths:
+        with rasterio.open(p) as src:
+            tile = np.zeros((height, width), dtype=np.uint8)
+            reproject(
+                source=rasterio.band(src, 1),
+                destination=tile,
+                src_transform=src.transform,
+                src_crs=src.crs,
+                dst_transform=mosaic_transform,
+                dst_crs=target_crs,
+                resampling=Resampling.nearest,
+            )
+            mosaic = np.maximum(mosaic, tile)
+
+    # ── 4. Save ────────────────────────────────────────────────────────────
+    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+    with rasterio.open(
+        output_path, 'w',
+        driver='GTiff',
+        height=height, width=width,
+        count=1, dtype=np.uint8,
+        crs=target_crs,
+        transform=mosaic_transform,
+        compress='lzw',
+    ) as dst:
+        dst.write(mosaic, 1)
+
+    console.print(f"[green]✓[/green] Mosaic saved to [bold]{output_path}[/bold].")
 
 
 def normalize_input_mean_std(image_hwc, mean_per_channel, std_per_channel, epsilon=1e-8):

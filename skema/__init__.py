@@ -2,7 +2,7 @@
 SKeMa: Satellite-based Kelp Mapping using Semantic Segmentation on Sentinel-2 imagery
 """
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 __author__ = "Mohsen Ghanbari"
 __email__ = "mohsenghanbari@uvic.ca"
 __doi__ = "10.57967/hf/6790"
