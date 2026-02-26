@@ -371,8 +371,6 @@ Follow these steps to download Sentinel-2 images:
    ![Thumbnail and Download](docs/images/thumbnail_and_download.png)
 
 
-Readme section · MD
-Copy
 
 ### Running SKeMa
 
