@@ -113,6 +113,15 @@ def main(input_dir, output_filename, model_type, batch_dir):
     #  SINGLE-SCENE MODE (original behaviour)                             #
     # ------------------------------------------------------------------ #
     else:
+        if not input_dir.upper().endswith('.SAFE'):
+            raise click.BadParameter(
+                f"--input-dir must point to a .SAFE folder for single-scene mode. Got: {input_dir}\n"
+                f"  Tip: If you want to process multiple scenes at once, use the --batch-dir flag."
+            )
+        if not os.path.isdir(input_dir):
+            raise click.BadParameter(
+                f"The path '{input_dir}' does not exist or is not a directory."
+            )
         segment(input_dir, output_filename, mean_per_channel, std_per_channel, model_type)
 
 
