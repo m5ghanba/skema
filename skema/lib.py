@@ -420,6 +420,11 @@ def warp_bathy_and_subs(safe_folder_root, basename):
                     progress.advance(task)
                     continue
 
+                if not os.path.exists(input_file_path):
+                    console.print(f"[red]Static file not found: {input_file_path}[/red]")
+                    progress.advance(task)
+                    continue
+
                 output_file_path = os.path.join(folder_path, folder_name + suffix)
 
                 with rasterio.open(reference_tif) as ref:
@@ -1599,11 +1604,31 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
 
             if os.path.exists(bathy_file) and os.path.exists(subs_file):
                 console = Console()
-                console.print("[yellow]Bathymetry and substrate TIFFs already exist, skipping alignment and merging.[/yellow]") #⚠
+                console.print("[yellow]Bathymetry and substrate TIFFs already exist, skipping.[/yellow]")
             else:
+                required_static = ["Bathymetry_10m.tif", "NCC_substrate_20m.tif",
+                                "SOG_substrate_20m.tif", "WCVI_substrate_20m.tif",
+                                "QCS_substrate_20m.tif", "HG_substrate_20m.tif"]
+                missing = []
+                for fname in required_static:
+                    try:
+                        p = str(files("skema.static.bathy_substrate").joinpath(fname))
+                        if not os.path.exists(p):
+                            missing.append(fname)
+                    except Exception:
+                        missing.append(fname)
+
+                if missing:
+                    raise FileNotFoundError(
+                        f"model_full requires bathymetry/substrate static files, but these are missing:\n"
+                        + "\n".join(f"  - {f}" for f in missing)
+                        + "\n\nPlace these files in the static folder or use --model-type model_s2bandsandindices_only."
+                    )
+
                 warp_bathy_and_subs(parent_dir, safe_basename)
                 merge_substrate_files_single(output_folder)
                 apply_fill_nodata_single(output_folder)
+
         input_dir = output_folder
 
     # Create dataset and run inference

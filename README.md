@@ -197,7 +197,17 @@ source skema_env/bin/activate
 # Install SKeMa
 pip install skema-kelp
 ```
+```
+⚠️ Note for macOS users:
+In some cases, the installation may fail while building the opencv-python-headless dependency (a computer vision library required by albumentations). If you see an error mentioning OpenCV or "Failed building wheel for opencv-python-headless", install OpenCV separately first and then install SKeMa again:
 
+```bash
+pip install opencv-python-headless==4.9.0.80
+pip install skema-kelp
+```
+
+This installs a precompiled OpenCV wheel for macOS and avoids a lengthy build process.
+```
 #### Option 2: Install from source (for developers)
 
 If you want to modify the code or contribute to development:
