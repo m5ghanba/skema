@@ -1,4 +1,4 @@
-__version__ = "0.2.4"
+__version__ = "0.3.0"
 
 import rasterio
 
@@ -381,12 +381,126 @@ def extract_bands_to_geotiffs(safe_dir, output_dir):
     return output_10m, output_20m
 
 
+def calculate_slope_horn(bathymetry, cell_size=20.0):
+    """Vectorized Horn slope calculation for a 2D numpy array."""
+    bathy = bathymetry.astype(np.float32)
+    H, W = bathy.shape
+    slope = np.zeros((H, W), dtype=np.float32)
+
+    # If the chunk is too small (e.g., edge cases), just return zeros
+    if H < 3 or W < 3:
+        return slope
+
+    # Extract shifted views (a-i)
+    a, b, c = bathy[:-2, :-2], bathy[:-2, 1:-1], bathy[:-2, 2:]
+    d, f = bathy[1:-1, :-2], bathy[1:-1, 2:]
+    g, h, i = bathy[2:, :-2], bathy[2:, 1:-1], bathy[2:, 2:]
+
+    # Mask invalid data (NaNs)
+    invalid = np.isnan(a) | np.isnan(b) | np.isnan(c) | \
+              np.isnan(d) | np.isnan(f) | \
+              np.isnan(g) | np.isnan(h) | np.isnan(i)
+
+    # Horn's formulas for dz/dx and dz/dy
+    dz_dx = ((c + 2*f + i) - (a + 2*d + g)) / (8.0 * cell_size)
+    dz_dy = ((g + 2*h + i) - (a + 2*b + c)) / (8.0 * cell_size)
+
+    # Calculate slope in degrees
+    slope_inner = np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2)))
+    slope_inner[invalid] = np.nan
+
+    slope[1:-1, 1:-1] = slope_inner
+    return slope
+
+
+def calculate_slope_for_raster(input_tiff, output_tiff, block_size=2048):
+    """Calculate slope from bathymetry raster using windowed processing."""
+    console = Console()
+    console.print(f"[cyan]Starting slope calculation for {os.path.basename(input_tiff)}...[/cyan]")
+    
+    from rasterio.windows import Window
+    
+    with rasterio.open(input_tiff) as src:
+        profile = src.profile
+        
+        # Update profile for output: Float32, keep nodata from source
+        profile.update(
+            dtype=rasterio.float32,
+            count=1,
+            compress='lzw',
+            tiled=True,
+            blockxsize=512,
+            blockysize=512
+        )
+        
+        nodata_val = src.nodata
+        
+        # Get cell size from the transform
+        cell_size = abs(src.transform[0])  # pixel width in georeferenced units
+
+        with rasterio.open(output_tiff, 'w', **profile) as dst:
+            
+            # Iterate over the grid in chunks
+            for row_idx in range(0, src.height, block_size):
+                for col_idx in range(0, src.width, block_size):
+                    
+                    # 1. Define the core window we want to write to
+                    window = Window(
+                        col_off=col_idx, 
+                        row_off=row_idx, 
+                        width=min(block_size, src.width - col_idx), 
+                        height=min(block_size, src.height - row_idx)
+                    )
+                    
+                    # 2. Define the Buffered Window (expand by 1 pixel on all sides, staying within bounds)
+                    row_start = max(0, window.row_off - 1)
+                    row_stop = min(src.height, window.row_off + window.height + 1)
+                    col_start = max(0, window.col_off - 1)
+                    col_stop = min(src.width, window.col_off + window.width + 1)
+                    
+                    buf_window = Window.from_slices((row_start, row_stop), (col_start, col_stop))
+                    
+                    # 3. Read the buffered data
+                    bathy_data = src.read(1, window=buf_window)
+                    
+                    if nodata_val is not None:
+                        bathy_data = np.where(bathy_data == nodata_val, np.nan, bathy_data)
+                    
+                    # 4. Calculate the slope
+                    slope_data = calculate_slope_horn(bathy_data, cell_size=cell_size)
+                    
+                    # 5. Crop the 1-pixel buffer back out to match our original target window
+                    crop_row_start = window.row_off - row_start
+                    crop_row_stop = crop_row_start + window.height
+                    crop_col_start = window.col_off - col_start
+                    crop_col_stop = crop_col_start + window.width
+                    
+                    final_slope = slope_data[crop_row_start:crop_row_stop, crop_col_start:crop_col_stop]
+                    
+                    # 6. Write the processed chunk directly to the output disk
+                    dst.write(final_slope.astype(rasterio.float32), 1, window=window)
+                
+                # Optional: Print progress
+                if row_idx % (block_size * 4) == 0:  # Print every 4 chunks
+                    console.print(f"[cyan]Processed up to row {min(row_idx + block_size, src.height)} / {src.height}[/cyan]")
+    
+    console.print(f"[green]✓[/green] Slope calculation complete: {output_tiff}")
+
+
 def warp_bathy_and_subs(safe_folder_root, basename):
     """
-    Aligns bathymetry and substrate rasters to match the CRS, resolution (10m), and extent 
+    Aligns bathymetry, slope, and substrate rasters to match the CRS, resolution (10m), and extent 
     of the reference Sentinel-2 image using bilinear resampling.
+    
+    Automatically detects scene type and uses appropriate substrate files:
+    - BoPs scenes (UXQ, UXS, UDU): uses 4 BoPs substrate files at 10m resolution
+    - Regular scenes: uses 5 regional substrate files at 20m resolution
     """
     console = Console()
+    
+    # Detect if this is a BoPs scene (UXQ, UXS, or UDU in basename)
+    bops_identifiers = ["UXQ", "UXS", "UDU"]
+    is_bops_scene = any(identifier in basename for identifier in bops_identifiers)
     
     # Look for _B2B3B4B8.tif inside each subfolder
     for folder_name in os.listdir(safe_folder_root):
@@ -401,15 +515,30 @@ def warp_bathy_and_subs(safe_folder_root, basename):
 
         reference_tif = os.path.join(folder_path, tif_file)
 
-        # Define static files to warp and their suffixes
-        input_files = {
-            "Bathymetry_10m.tif": "_Bathy.tif",
-            "NCC_substrate_20m.tif": "_SubsNCC.tif",
-            "SOG_substrate_20m.tif": "_SubsSOG.tif",
-            "WCVI_substrate_20m.tif": "_SubsWCVI.tif",
-            "QCS_substrate_20m.tif": "_SubsQCS.tif",
-            "HG_substrate_20m.tif": "_SubsHG.tif",
-        }
+        # Define static files to warp based on scene type
+        if is_bops_scene:
+            # BoPs scenes use 4 substrate files at 10m resolution
+            input_files = {
+                "Bathymetry.tif": "_Bathy.tif",
+                "Slope.tif": "_Slope.tif",
+                "BoPs_HG_10m.tif": "_SubsHG.tif",
+                "BoPs_NCC_10m.tif": "_SubsNCC.tif",
+                "BoPs_QCSSOG_10m.tif": "_SubsQCSSOG.tif",
+                "BoPs_WCVI_10m.tif": "_SubsWCVI.tif",
+            }
+            console.print(f"[cyan]Detected BoPs scene ({basename}). Using 10m BoPs substrate files.[/cyan]")
+        else:
+            # Regular scenes use 5 substrate files at 20m resolution
+            input_files = {
+                "Bathymetry.tif": "_Bathy.tif",
+                "Slope.tif": "_Slope.tif",
+                "NCC_substrate_20m.tif": "_SubsNCC.tif",
+                "SOG_substrate_20m.tif": "_SubsSOG.tif",
+                "WCVI_substrate_20m.tif": "_SubsWCVI.tif",
+                "QCS_substrate_20m.tif": "_SubsQCS.tif",
+                "HG_substrate_20m.tif": "_SubsHG.tif",
+            }
+            console.print(f"[cyan]Detected regular scene ({basename}). Using 20m regional substrate files.[/cyan]")
 
         with Progress(
             SpinnerColumn(),
@@ -418,7 +547,7 @@ def warp_bathy_and_subs(safe_folder_root, basename):
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TimeElapsedColumn(),
         ) as progress:
-            task = progress.add_task(f"[cyan]Aligning bathymetry and substrate files with Sentinel-2 image...", total=len(input_files))
+            task = progress.add_task(f"[cyan]Aligning bathymetry, slope, and substrate files with Sentinel-2 image...", total=len(input_files))
             
             # Load bathy/substrate files from static directory
             for file_name, suffix in input_files.items():
@@ -498,28 +627,49 @@ def fill_nodata_fixed_value(input_file, output_file, fill_value):
 
 
 def merge_substrate_files_single(safe_output_dir):
-    """Merge substrate rasters in a single SAFE output folder into _Subs.tif."""
     """
-    Merges five regional substrate rasters into a single substrate file, prioritizing valid 
-    substrate values (1-4) and removing original files after merge.
+    Merges substrate rasters in a single SAFE output folder into _Subs.tif.
+    
+    Automatically detects scene type and uses appropriate substrate files:
+    - BoPs scenes (UXQ, UXS, UDU): merges 4 BoPs substrate files (valid values: 1-3)
+    - Regular scenes: merges 5 regional substrate files (valid values: 1-4)
+    
+    For BoPs scenes, remaps substrate value 4 to 3 (since BoPs only has 3 classes).
     """
     
     console = Console()
-    suffixes = ["_SubsNCC.tif", "_SubsSOG.tif", "_SubsWCVI.tif", "_SubsQCS.tif", "_SubsHG.tif"]
-    valid_values = {1, 2, 3, 4}
-
-    # Collect input rasters
-    input_files = [os.path.join(safe_output_dir, f) for f in os.listdir(safe_output_dir) if any(f.endswith(s) for s in suffixes)]
-    if len(input_files) != 5:
-        console.print(f"[yellow]Not all substrate files found in {safe_output_dir}, skipping merge.[/yellow]")
-        return None
-
+    
+    # Get the base name from B2B3B4B8.tif file
     b2348_file = next((f for f in os.listdir(safe_output_dir) if f.endswith("_B2B3B4B8.tif")), None)
     if not b2348_file:
         # console.print(f"[yellow]No reference image in {safe_output_dir}, skipping merge.[/yellow]")
         return None
-
+    
     base_name = b2348_file.replace("_B2B3B4B8.tif", "")
+    
+    # Detect if this is a BoPs scene
+    bops_identifiers = ["UXQ", "UXS", "UDU"]
+    is_bops_scene = any(identifier in base_name for identifier in bops_identifiers)
+    
+    if is_bops_scene:
+        # BoPs scenes use 4 substrate files
+        suffixes = ["_SubsHG.tif", "_SubsNCC.tif", "_SubsQCSSOG.tif", "_SubsWCVI.tif"]
+        valid_values = {1, 2, 3}
+        expected_count = 4
+        # console.print(f"[cyan]Merging BoPs substrate (4 files, valid values: 1-3)[/cyan]")
+    else:
+        # Regular scenes use 5 substrate files
+        suffixes = ["_SubsNCC.tif", "_SubsSOG.tif", "_SubsWCVI.tif", "_SubsQCS.tif", "_SubsHG.tif"]
+        valid_values = {1, 2, 3, 4}
+        expected_count = 5
+        # console.print(f"[cyan]Merging regional substrate (5 files, valid values: 1-4)[/cyan]")
+
+    # Collect input rasters
+    input_files = [os.path.join(safe_output_dir, f) for f in os.listdir(safe_output_dir) if any(f.endswith(s) for s in suffixes)]
+    if len(input_files) != expected_count:
+        console.print(f"[yellow]Not all substrate files found in {safe_output_dir} (found {len(input_files)}, expected {expected_count}), skipping merge.[/yellow]")
+        return None
+
     output_file = os.path.join(safe_output_dir, f"{base_name}_Subs.tif")
 
     with rasterio.open(input_files[0]) as src:
@@ -532,6 +682,11 @@ def merge_substrate_files_single(safe_output_dir):
             data = src.read(1)
             mask = np.isin(data, list(valid_values))
             merged_data[mask] = data[mask]
+    
+    # Remap substrate value 4 to 3 regardless of scene type.
+    # Value 4 only appears in scenes using the original 20m substrate files;
+    # remapping ensures a consistent 3-class scheme across all scene types.
+    merged_data[merged_data == 4] = 3
 
     meta.update(dtype=rasterio.uint8, nodata=0, compress="LZW")
     with rasterio.open(output_file, "w", **meta) as dst:
@@ -547,13 +702,16 @@ def merge_substrate_files_single(safe_output_dir):
     return output_file
 
 
-def apply_fill_nodata_single(safe_output_dir, fill_value_subs=0, fill_value_bathy=-2000):
+def apply_fill_nodata_single(safe_output_dir, fill_value_subs=0, fill_value_bathy=-2000, fill_value_slope=85):
     """
-    Applies NoData filling to substrate (default: 0) and bathymetry (default: -2000) rasters 
+    Applies NoData filling to substrate (default: 0), bathymetry (default: -2000), and slope (default: 85) rasters 
     and renames them to final output files.
+    
+    Note: Slope files are already named correctly (_Slope.tif), so they are processed in-place.
     """
     subs_file = next((f for f in os.listdir(safe_output_dir) if f.endswith("_Subs.tif")), None)
     bathy_file = next((f for f in os.listdir(safe_output_dir) if f.endswith("_Bathy.tif")), None)
+    slope_file = next((f for f in os.listdir(safe_output_dir) if f.endswith("_Slope.tif")), None)
 
     if subs_file:
         base_name = subs_file.replace("_Subs.tif", "")
@@ -567,7 +725,17 @@ def apply_fill_nodata_single(safe_output_dir, fill_value_subs=0, fill_value_bath
         fill_nodata_fixed_value(os.path.join(safe_output_dir, bathy_file), output_file, fill_value_bathy)
         bathy_file = output_file
 
-    return subs_file, bathy_file
+    if slope_file:
+        # Slope file is already correctly named, process in-place using temp file
+        slope_path = os.path.join(safe_output_dir, slope_file)
+        temp_output = os.path.join(safe_output_dir, f"temp_{slope_file}")
+        fill_nodata_fixed_value(slope_path, temp_output, fill_value_slope)
+        # Replace original with processed version
+        import shutil
+        shutil.move(temp_output, slope_path)
+        slope_file = slope_path
+
+    return subs_file, bathy_file, slope_file
 
 
 def create_mosaic(tif_paths, output_path, target_resolution_meters=10):
@@ -595,12 +763,33 @@ def create_mosaic(tif_paths, output_path, target_resolution_meters=10):
         console.print("[red]No valid prediction TIFFs found – mosaic skipped.[/red]")
         return
 
+    # ── Check if tiles are in BC coast (BC Albers extent) ─────────────────
+    # BC Albers approximate extent (EPSG:3005)
+    bc_albers_extent = {
+        'min_x': 200000,
+        'max_x': 1900000,
+        'min_y': 300000,
+        'max_y': 1750000
+    }
+    
+    tiles_in_bc = False
     for p in valid_paths:
         with rasterio.open(p) as src:
             if str(src.crs) == target_crs:
-                all_bounds.append(src.bounds)
+                bounds = src.bounds
             else:
-                all_bounds.append(transform_bounds(src.crs, target_crs, *src.bounds))
+                bounds = transform_bounds(src.crs, target_crs, *src.bounds)
+            all_bounds.append(bounds)
+            
+            # Check if this tile overlaps with BC coast
+            if (bounds[0] < bc_albers_extent['max_x'] and bounds[2] > bc_albers_extent['min_x'] and
+                bounds[1] < bc_albers_extent['max_y'] and bounds[3] > bc_albers_extent['min_y']):
+                tiles_in_bc = True
+    
+    if not tiles_in_bc:
+        console.print("[yellow]Warning: Mosaic creation is designed for BC coast tiles. "
+                     "The provided scenes do not appear to be in British Columbia. Mosaic creation skipped.[/yellow]")
+        return
 
     min_x = min(b[0] for b in all_bounds)
     min_y = min(b[1] for b in all_bounds)
@@ -776,7 +965,7 @@ class SatelliteDataset(BaseDataset):
     def calculate_chlorophyll_index_green(self, image_hwc):
         nir = image_hwc[..., 3]
         green = image_hwc[..., 1]
-        return (nir / (green + 1e-10)) - 1
+        return np.where(green < 1e-4, 20.0, nir / (green + 1e-10) - 1)
 
     def calculate_ndvi_re(self, image_hwc):
         re = image_hwc[..., 4]
@@ -1053,34 +1242,87 @@ class segModel(pl.LightningModule):
 
 
 def load_model(model_type='model_full'):
-    """Load the appropriate model based on model_type."""
+    """Load the appropriate model(s) based on model_type."""
     if model_type == 'model_full':
         in_channels = 13
         MODEL_URL = "https://huggingface.co/m5ghanba/SKeMa/resolve/main/model.pth"# use hf hosted model instead of github releases"https://github.com/m5ghanba/skema/releases/download/v0.2.0/model.pth" https://huggingface.co/m5ghanba/SKeMa/blob/main/model.pth
         model_filename = f"model_v{__version__}.pth"
+        
+        # Create model
+        model = segModel("Unet", "tu-maxvit_tiny_tf_512", in_channels=in_channels, out_classes=OUT_CLASSES)
+        
+        # Download model if needed
+        LOCAL_PATH = os.path.join(os.path.expanduser("~"), ".skema", model_filename)
+        os.makedirs(os.path.dirname(LOCAL_PATH), exist_ok=True)
+        
+        if not os.path.exists(LOCAL_PATH):
+            print(f"Downloading model from {MODEL_URL}...")
+            urllib.request.urlretrieve(MODEL_URL, LOCAL_PATH)
+            print("Download complete.")
+        
+        # Load weights
+        model.load_state_dict(torch.load(LOCAL_PATH, map_location="cpu"))
+        return model
+        
     elif model_type == 'model_s2bandsandindices_only':
         in_channels = 10
         MODEL_URL = "https://huggingface.co/m5ghanba/SKeMa/resolve/main/modelS2Only.pth" # "https://github.com/m5ghanba/skema/releases/download/v0.2.0/modelS2Only.pth"  https://huggingface.co/m5ghanba/SKeMa/blob/main/modelS2Only.pth
         model_filename = f"modelS2Only_v{__version__}.pth"
+        
+        # Create model
+        model = segModel("Unet", "tu-maxvit_tiny_tf_512", in_channels=in_channels, out_classes=OUT_CLASSES)
+        
+        # Download model if needed
+        LOCAL_PATH = os.path.join(os.path.expanduser("~"), ".skema", model_filename)
+        os.makedirs(os.path.dirname(LOCAL_PATH), exist_ok=True)
+        
+        if not os.path.exists(LOCAL_PATH):
+            print(f"Downloading model from {MODEL_URL}...")
+            urllib.request.urlretrieve(MODEL_URL, LOCAL_PATH)
+            print("Download complete.")
+        
+        # Load weights
+        model.load_state_dict(torch.load(LOCAL_PATH, map_location="cpu"))
+        return model
+        
+    elif model_type == 'model_ensemble':
+        # Load both models for ensemble
+        print("Loading ensemble models...")
+        
+        # Load model_full
+        in_channels_full = 13
+        MODEL_URL_full = "https://huggingface.co/m5ghanba/SKeMa/resolve/main/model.pth"
+        model_filename_full = f"model_v{__version__}.pth"
+        LOCAL_PATH_full = os.path.join(os.path.expanduser("~"), ".skema", model_filename_full)
+        
+        os.makedirs(os.path.dirname(LOCAL_PATH_full), exist_ok=True)
+        if not os.path.exists(LOCAL_PATH_full):
+            print(f"Downloading model_full from {MODEL_URL_full}...")
+            urllib.request.urlretrieve(MODEL_URL_full, LOCAL_PATH_full)
+            print("Download complete.")
+        
+        model_full = segModel("Unet", "tu-maxvit_tiny_tf_512", in_channels=in_channels_full, out_classes=OUT_CLASSES)
+        model_full.load_state_dict(torch.load(LOCAL_PATH_full, map_location="cpu"))
+        
+        # Load model_s2bandsandindices_only
+        in_channels_s2 = 10
+        MODEL_URL_s2 = "https://huggingface.co/m5ghanba/SKeMa/resolve/main/modelS2Only.pth"
+        model_filename_s2 = f"modelS2Only_v{__version__}.pth"
+        LOCAL_PATH_s2 = os.path.join(os.path.expanduser("~"), ".skema", model_filename_s2)
+        
+        if not os.path.exists(LOCAL_PATH_s2):
+            print(f"Downloading model_s2bandsandindices_only from {MODEL_URL_s2}...")
+            urllib.request.urlretrieve(MODEL_URL_s2, LOCAL_PATH_s2)
+            print("Download complete.")
+        
+        model_s2 = segModel("Unet", "tu-maxvit_tiny_tf_512", in_channels=in_channels_s2, out_classes=OUT_CLASSES)
+        model_s2.load_state_dict(torch.load(LOCAL_PATH_s2, map_location="cpu"))
+        
+        print("Both models loaded successfully.")
+        return (model_full, model_s2)  # Return tuple of both models
+        
     else:
-        raise ValueError(f"Invalid model_type '{model_type}'")
-    
-    # Create model
-    model = segModel("Unet", "tu-maxvit_tiny_tf_512", in_channels=in_channels, out_classes=OUT_CLASSES)
-    
-    # Download model if needed
-    LOCAL_PATH = os.path.join(os.path.expanduser("~"), ".skema", model_filename)
-    os.makedirs(os.path.dirname(LOCAL_PATH), exist_ok=True)
-    
-    if not os.path.exists(LOCAL_PATH):
-        print(f"Downloading model from {MODEL_URL}...")
-        urllib.request.urlretrieve(MODEL_URL, LOCAL_PATH)
-        print("Download complete.")
-    
-    # Load weights
-    model.load_state_dict(torch.load(LOCAL_PATH, map_location="cpu"))
-    
-    return model
+        raise ValueError(f"Invalid model_type '{model_type}'. Must be 'model_full', 'model_s2bandsandindices_only', or 'model_ensemble'.")
 
 
 
@@ -1140,13 +1382,12 @@ class DatasetInference(SatelliteDataset):
                  overlap=0.7, mean_per_channel=None, std_per_channel=None, halo_size=64, padding_mode='reflect'):
         
         # Validate model_type
-        if model_type not in ['model_full', 'model_s2bandsandindices_only']:
-            raise ValueError(f"Invalid model_type '{model_type}'. Must be 'model_full' or 'model_s2bandsandindices_only'.")
+        if model_type not in ['model_full', 'model_s2bandsandindices_only', 'model_ensemble']:
+            raise ValueError(f"Invalid model_type '{model_type}'. Must be 'model_full', 'model_s2bandsandindices_only', or 'model_ensemble'.")
         
         self.main_directory = main_directory
         self.tile_size = tile_size
         self.overlap = overlap
-        self.model = model.to(DEVICE)
         self.model_type = model_type
         self.mean_per_channel = mean_per_channel
         self.std_per_channel = std_per_channel
@@ -1154,11 +1395,19 @@ class DatasetInference(SatelliteDataset):
         self.padding_mode = padding_mode
         self.dataset = dataset
         
+        # Handle ensemble mode (model is a tuple of two models)
+        if model_type == 'model_ensemble':
+            self.model_full = model[0].to(DEVICE)
+            self.model_s2 = model[1].to(DEVICE)
+            self.model = None  # Not used in ensemble mode
+        else:
+            self.model = model.to(DEVICE)
+        
         self.weight_map = create_weight_map(tile_size, halo_size)
         
         # Get file paths based on model type
-        if self.model_type == 'model_full':
-            self.image_path1, self.image_path2, self.substrate_path, self.bathymetry_path = self.get_file_paths(main_directory)
+        if self.model_type == 'model_full' or self.model_type == 'model_ensemble':
+            self.image_path1, self.image_path2, self.substrate_path, self.bathymetry_path, self.slope_path = self.get_file_paths(main_directory)
         else:  # model_s2bandsandindices_only
             self.image_path1, self.image_path2 = self.get_file_paths(main_directory)
         
@@ -1167,8 +1416,8 @@ class DatasetInference(SatelliteDataset):
 
     def get_file_paths(self, main_directory):
         """Retrieve file paths based on model type."""
-        if self.model_type == 'model_full':
-            file_patterns = ["*_B2B3B4B8.tif", "*_B5B6B7B8A_B11B12.tif", "*_Substrate.tif", "*_Bathymetry.tif"]
+        if self.model_type == 'model_full' or self.model_type == 'model_ensemble':
+            file_patterns = ["*_B2B3B4B8.tif", "*_B5B6B7B8A_B11B12.tif", "*_Substrate.tif", "*_Bathymetry.tif", "*_Slope.tif"]
         else:  # model_s2bandsandindices_only
             file_patterns = ["*_B2B3B4B8.tif", "*_B5B6B7B8A_B11B12.tif"]
         
@@ -1196,20 +1445,24 @@ class DatasetInference(SatelliteDataset):
             ), resampling=Resampling.nearest)
             image2 = np.transpose(image2, (1, 2, 0)).astype(np.float32)
         
-        if self.model_type == 'model_full':
-            # Load substrate and bathymetry
+        if self.model_type == 'model_full' or self.model_type == 'model_ensemble':
+            # Load substrate, bathymetry, and slope
             with rasterio.open(self.substrate_path) as src3:
                 substrate = src3.read(1).astype(np.float32)[:, :, np.newaxis]
             
             with rasterio.open(self.bathymetry_path) as src4:
                 bathymetry = src4.read(1).astype(np.float32)[:, :, np.newaxis]
             
-            # Allocate image array with 12 channels (8 base + 5 indices)
+            with rasterio.open(self.slope_path) as src5:
+                slope = src5.read(1).astype(np.float32)[:, :, np.newaxis]
+            
+            # Allocate image array with 13 channels (5 S2 bands + substrate + bathymetry + slope + 5 indices)
             self.image = np.empty((image1.shape[0], image1.shape[1], 13), dtype=np.float32)
             self.image[:, :, 0:4] = image1
             self.image[:, :, 4] = image2[:, :, 0]
             self.image[:, :, 5] = substrate[:, :, 0]
             self.image[:, :, 6] = bathymetry[:, :, 0]
+            self.image[:, :, 7] = slope[:, :, 0]
         else:  # model_s2bandsandindices_only
             # Allocate image array with 10 channels (5 base + 5 indices)
             self.image = np.empty((image1.shape[0], image1.shape[1], 10), dtype=np.float32)
@@ -1221,46 +1474,6 @@ class DatasetInference(SatelliteDataset):
         
         return self.image, metadata
 
-    def calculate_slope(self, bathymetry, cell_size=1.0):
-        """
-        Vectorized Horn slope calculation.
-        Produces the same values as the loop-based version.
-        """
-        bathy = bathymetry.astype(np.float32)
-    
-        H, W = bathy.shape
-        slope = np.zeros((H, W), dtype=np.float32)
-    
-        # Extract shifted views (a–i)
-        a = bathy[:-2, :-2]
-        b = bathy[:-2, 1:-1]
-        c = bathy[:-2, 2:]
-        d = bathy[1:-1, :-2]
-        f = bathy[1:-1, 2:]
-        g = bathy[2:, :-2]
-        h = bathy[2:, 1:-1]
-        i = bathy[2:, 2:]
-    
-        # Mask: any NaN in the 3x3 window → invalid
-        invalid = (
-            np.isnan(a) | np.isnan(b) | np.isnan(c) |
-            np.isnan(d) | np.isnan(f) |
-            np.isnan(g) | np.isnan(h) | np.isnan(i)
-        )
-    
-        dz_dx = ((c + 2*f + i) - (a + 2*d + g)) / (8.0 * cell_size)
-        dz_dy = ((g + 2*h + i) - (a + 2*b + c)) / (8.0 * cell_size)
-    
-        slope_inner = np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2)))
-    
-        # Apply NaN rule (same behavior as your loop)
-        slope_inner[invalid] = 0.0
-    
-        # Write back to full array (edges remain 0)
-        slope[1:-1, 1:-1] = slope_inner
-    
-        return slope
-
     def _compute_slope_and_all_indices(self):
         """Compute all spectral indices directly into self.image."""
         green = self.image[:, :, 1]
@@ -1270,23 +1483,21 @@ class DatasetInference(SatelliteDataset):
 
         eps = 1e-10
         
-        if self.model_type == 'model_full':
-            # Calculate slope
-            bathy = self.image[:, :, 6]
-            slope = self.calculate_slope(bathy)
-            self.image[:, :, 7] = slope
+        if self.model_type == 'model_full' or self.model_type == 'model_ensemble':
+            # Slope is already loaded at channel 7, no need to calculate
             # Indices start at channel 8
             self.image[:, :, 8] = (nir - red) / (nir + red + eps)  # NDVI
             self.image[:, :, 9] = (green - nir) / (green + nir + eps)  # NDWI
             self.image[:, :, 10] = (nir - green) / (nir + green + eps)  # GNDVI
-            self.image[:, :, 11] = (nir / (green + eps)) - 1  # Chlorophyll Index
+            self.image[:, :, 11] = np.where(green < 1e-4, 20.0, nir / (green + eps) - 1)  # Chlorophyll Index
             self.image[:, :, 12] = (re - red) / (re + red + eps)  # NDVI-RE
         else:  # model_s2bandsandindices_only
             # Indices start at channel 5
             self.image[:, :, 5] = (nir - red) / (nir + red + eps)  # NDVI
             self.image[:, :, 6] = (green - nir) / (green + nir + eps)  # NDWI
             self.image[:, :, 7] = (nir - green) / (nir + green + eps)  # GNDVI
-            self.image[:, :, 8] = (nir / (green + eps)) - 1  # Chlorophyll Index
+            self.image[:, :, 8] = np.where(green < 1e-4, 20.0, nir / (green + eps) - 1)  # Chlorophyll Index
+            self.image[:, :, 9] = (re - red) / (re + red + eps)  # NDVI-RE
             self.image[:, :, 9] = (re - red) / (re + red + eps)  # NDVI-RE
 
 
@@ -1341,9 +1552,9 @@ class DatasetInference(SatelliteDataset):
         batch_tensor = torch.cat(tiles, dim=0).to(DEVICE)  # shape: (B, C, H, W)
         outputs = self.model(batch_tensor)  # shape: (B, 1, H, W) or (B, H, W)
     
-        # Handle binary output (thresholding)
+        # Handle binary output (apply sigmoid then threshold)
         if outputs.shape[1] == 1:
-            outputs = (outputs.squeeze(1) > 0.5).cpu().numpy().astype(np.uint8)
+            outputs = (outputs.squeeze(1).sigmoid() > 0.5).cpu().numpy().astype(np.uint8)
         else:
             outputs = outputs.cpu().numpy().astype(np.uint8)
     
@@ -1352,6 +1563,56 @@ class DatasetInference(SatelliteDataset):
             effective_tile_height = min(self.tile_size, predictions.shape[0] - i)
             effective_tile_width = min(self.tile_size, predictions.shape[1] - j)
     
+            predictions[i:i + effective_tile_height, j:j + effective_tile_width] = np.maximum(
+                predictions[i:i + effective_tile_height, j:j + effective_tile_width],
+                pred[:effective_tile_height, :effective_tile_width]
+            )
+
+    def _process_batch_not_weighted_ensemble(self, tiles_full, tiles_s2, coords, predictions):
+        """Not weighted ensemble mode - Run both models, average logits, then threshold."""
+        # Process with model_full (13 channels)
+        batch_tensor_full = torch.cat(tiles_full, dim=0).to(DEVICE)
+        logits_full = self.model_full(batch_tensor_full)  # shape: (B, 1, H, W)
+
+        # Process with model_s2 (10 channels)
+        batch_tensor_s2 = torch.cat(tiles_s2, dim=0).to(DEVICE)
+        logits_s2 = self.model_s2(batch_tensor_s2)  # shape: (B, 1, H, W)
+
+        # Average logits from both models, then apply sigmoid and threshold
+        averaged_logits = (logits_full + logits_s2) / 2.0
+        outputs = (averaged_logits.squeeze(1).sigmoid() > 0.5).cpu().numpy().astype(np.uint8)
+
+        # Write predictions into full image
+        for pred, (i, j) in zip(outputs, coords):
+            effective_tile_height = min(self.tile_size, predictions.shape[0] - i)
+            effective_tile_width = min(self.tile_size, predictions.shape[1] - j)
+
+            predictions[i:i + effective_tile_height, j:j + effective_tile_width] = np.maximum(
+                predictions[i:i + effective_tile_height, j:j + effective_tile_width],
+                pred[:effective_tile_height, :effective_tile_width]
+            )
+
+    def _process_batch_ensemble(self, tiles_full, tiles_s2, coords, predictions):
+        """Ensemble mode - Run both models and average their logits before thresholding."""
+        # Process with model_full (13 channels)
+        batch_tensor_full = torch.cat(tiles_full, dim=0).to(DEVICE)
+        logits_full = self.model_full(batch_tensor_full)  # shape: (B, 1, H, W)
+        
+        # Process with model_s2 (10 channels)
+        batch_tensor_s2 = torch.cat(tiles_s2, dim=0).to(DEVICE)
+        logits_s2 = self.model_s2(batch_tensor_s2)  # shape: (B, 1, H, W)
+        
+        # Average logits from both models
+        averaged_logits = (logits_full + logits_s2) / 2.0
+        
+        # Apply threshold to averaged logits
+        outputs = (averaged_logits.squeeze(1) > 0.5).cpu().numpy().astype(np.uint8)
+        
+        # Write predictions into full image
+        for pred, (i, j) in zip(outputs, coords):
+            effective_tile_height = min(self.tile_size, predictions.shape[0] - i)
+            effective_tile_width = min(self.tile_size, predictions.shape[1] - j)
+            
             predictions[i:i + effective_tile_height, j:j + effective_tile_width] = np.maximum(
                 predictions[i:i + effective_tile_height, j:j + effective_tile_width],
                 pred[:effective_tile_height, :effective_tile_width]
@@ -1395,7 +1656,13 @@ class DatasetInference(SatelliteDataset):
             batch_size (int): Number of tiles to process in each batch
         """
         console = Console()
-        self.model.eval()
+        
+        # Set model(s) to eval mode
+        if self.model_type == 'model_ensemble':
+            self.model_full.eval()
+            self.model_s2.eval()
+        else:
+            self.model.eval()
         
         predictions = np.zeros_like(self.image[:, :, 0], dtype=np.float32)
         weight_accumulator = np.zeros_like(self.image[:, :, 0], dtype=np.float32)
@@ -1408,6 +1675,10 @@ class DatasetInference(SatelliteDataset):
         batch_tiles = []
         batch_coords = []
         tiles_processed = 0
+        
+        # For ensemble mode, we need separate tile lists
+        if self.model_type == 'model_ensemble':
+            batch_tiles_s2 = []
 
         with Progress(
             SpinnerColumn(),
@@ -1425,10 +1696,22 @@ class DatasetInference(SatelliteDataset):
                     tile_tensor = torch.tensor(tile).permute(2, 0, 1).unsqueeze(0).float()
                     batch_tiles.append(tile_tensor)
                     batch_coords.append((i, j))
+                    
+                    # For ensemble, also create S2-only tiles (first 10 channels)
+                    if self.model_type == 'model_ensemble':
+                        # Extract first 5 S2 bands + 5 indices (skip substrate, bathy, slope at channels 5-7)
+                        # Channels: 0-4 (S2 bands), 8-12 (indices) -> remap to 0-9
+                        tile_s2 = np.concatenate([tile[:, :, :5], tile[:, :, 8:13]], axis=2)
+                        tile_s2_tensor = torch.tensor(tile_s2).permute(2, 0, 1).unsqueeze(0).float()
+                        batch_tiles_s2.append(tile_s2_tensor)
 
                     # Run batch when full
                     if len(batch_tiles) == batch_size:
-                        self._process_batch(batch_tiles, batch_coords, predictions, weight_accumulator)
+                        if self.model_type == 'model_ensemble':
+                            self._process_batch_ensemble(batch_tiles, batch_tiles_s2, batch_coords, predictions)
+                            batch_tiles_s2.clear()
+                        else:
+                            self._process_batch(batch_tiles, batch_coords, predictions, weight_accumulator)
                         tiles_processed += len(batch_tiles)
                         progress.update(task, completed=tiles_processed)
                         batch_tiles.clear()
@@ -1436,24 +1719,27 @@ class DatasetInference(SatelliteDataset):
 
                 # Handle remaining tiles
                 if batch_tiles:
-                    self._process_batch(batch_tiles, batch_coords, predictions, weight_accumulator)
+                    if self.model_type == 'model_ensemble':
+                        self._process_batch_ensemble(batch_tiles, batch_tiles_s2, batch_coords, predictions)
+                    else:
+                        self._process_batch(batch_tiles, batch_coords, predictions, weight_accumulator)
                     tiles_processed += len(batch_tiles)
                     progress.update(task, completed=tiles_processed)
 
-        # Finalize predictions
-        weight_accumulator = np.where(weight_accumulator == 0, 1, weight_accumulator)
-        predictions = predictions / weight_accumulator
-            
-        # Convert back to binary/class predictions
-        if predictions.ndim == 2:  # Binary case
-            predictions = (predictions > 0.5).astype(np.uint8)
-        else:  # Multi-class case
-            predictions = np.argmax(predictions, axis=-1).astype(np.uint8)
+        # Finalize predictions (only for non-ensemble modes)
+        if self.model_type != 'model_ensemble':
+            weight_accumulator = np.where(weight_accumulator == 0, 1, weight_accumulator)
+            predictions = predictions / weight_accumulator
+                
+            # Convert back to binary/class predictions
+            if predictions.ndim == 2:  # Binary case
+                predictions = (predictions > 0.5).astype(np.uint8)
+            else:  # Multi-class case
+                predictions = np.argmax(predictions, axis=-1).astype(np.uint8)
 
-        # Apply filters for model_full
-        if self.model_type == 'model_full':
+        # Apply filters for model_full and model_ensemble
+        if self.model_type == 'model_full' or self.model_type == 'model_ensemble':
             predictions[(self.image[:, :, 6] < -100) | (self.image[:, :, 6] > 20)] = 0
-            predictions[(self.image[:, :, 5] == 4)] = 0
 
         # Apply exclusion zones (defined in BC Albers EPSG:3005, reprojected to image CRS)
         predictions = apply_exclusion_zones(predictions, self.metadata)
@@ -1468,7 +1754,13 @@ class DatasetInference(SatelliteDataset):
 
     def run_model_on_tiles_not_weighted(self, batch_size=8):
         """Run the model on tiles in batches with GPU acceleration and low RAM usage."""
-        self.model.eval()
+        # Set model(s) to eval mode
+        if self.model_type == 'model_ensemble':
+            self.model_full.eval()
+            self.model_s2.eval()
+        else:
+            self.model.eval()
+
         predictions = np.zeros_like(self.image[:, :, 0], dtype=np.uint8)
 
         # First pass: count tiles
@@ -1479,6 +1771,10 @@ class DatasetInference(SatelliteDataset):
         batch_tiles = []
         batch_coords = []
         tiles_processed = 0
+
+        # For ensemble mode, we need separate tile lists
+        if self.model_type == 'model_ensemble':
+            batch_tiles_s2 = []
 
         with Progress(
             SpinnerColumn(),
@@ -1497,9 +1793,21 @@ class DatasetInference(SatelliteDataset):
                     batch_tiles.append(tile_tensor)
                     batch_coords.append((i, j))
 
+                    # For ensemble, also create S2-only tiles (first 10 channels)
+                    if self.model_type == 'model_ensemble':
+                        # Extract first 5 S2 bands + 5 indices (skip substrate, bathy, slope at channels 5-7)
+                        # Channels: 0-4 (S2 bands), 8-12 (indices) -> remap to 0-9
+                        tile_s2 = np.concatenate([tile[:, :, :5], tile[:, :, 8:13]], axis=2)
+                        tile_s2_tensor = torch.tensor(tile_s2).permute(2, 0, 1).unsqueeze(0).float()
+                        batch_tiles_s2.append(tile_s2_tensor)
+
                     # Run batch when full
                     if len(batch_tiles) == batch_size:
-                        self._process_batch_not_weighted(batch_tiles, batch_coords, predictions)
+                        if self.model_type == 'model_ensemble':
+                            self._process_batch_not_weighted_ensemble(batch_tiles, batch_tiles_s2, batch_coords, predictions)
+                            batch_tiles_s2.clear()
+                        else:
+                            self._process_batch_not_weighted(batch_tiles, batch_coords, predictions)
                         tiles_processed += len(batch_tiles)
                         progress.update(task, completed=tiles_processed)
                         batch_tiles.clear()
@@ -1507,14 +1815,16 @@ class DatasetInference(SatelliteDataset):
 
                 # Handle remaining tiles
                 if batch_tiles:
-                    self._process_batch_not_weighted(batch_tiles, batch_coords, predictions)
+                    if self.model_type == 'model_ensemble':
+                        self._process_batch_not_weighted_ensemble(batch_tiles, batch_tiles_s2, batch_coords, predictions)
+                    else:
+                        self._process_batch_not_weighted(batch_tiles, batch_coords, predictions)
                     tiles_processed += len(batch_tiles)
                     progress.update(task, completed=tiles_processed)
 
-        # Apply filters for model_full
-        if self.model_type == 'model_full':
+        # Apply filters for model_full and model_ensemble
+        if self.model_type == 'model_full' or self.model_type == 'model_ensemble':
             predictions[(self.image[:, :, 6] < -100) | (self.image[:, :, 6] > 20)] = 0
-            predictions[(self.image[:, :, 5] == 4)] = 0
 
         # Apply exclusion zones (defined in BC Albers EPSG:3005, reprojected to image CRS)
         predictions = apply_exclusion_zones(predictions, self.metadata)
@@ -1607,18 +1917,56 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
             if not b2348_file:
                 raise RuntimeError(f"Failed to extract bands for {input_dir}")
 
-        # Steps 2-4: Only for model_full (skip if bathymetry and substrate already exist)
-        if model_type == 'model_full':
+        # Steps 2-4: Only for model_full and model_ensemble (skip if bathymetry, substrate, and slope already exist)
+        if model_type == 'model_full' or model_type == 'model_ensemble':
             bathy_file = os.path.join(output_folder, f"{safe_basename}_Bathymetry.tif")
             subs_file = os.path.join(output_folder, f"{safe_basename}_Substrate.tif")
+            slope_file = os.path.join(output_folder, f"{safe_basename}_Slope.tif")
 
-            if os.path.exists(bathy_file) and os.path.exists(subs_file):
+            if os.path.exists(bathy_file) and os.path.exists(subs_file) and os.path.exists(slope_file):
                 console = Console()
-                console.print("[yellow]Bathymetry and substrate TIFFs already exist, skipping.[/yellow]")
+                console.print("[yellow]Bathymetry, substrate, and slope TIFFs already exist, skipping.[/yellow]")
             else:
-                required_static = ["Bathymetry_10m.tif", "NCC_substrate_20m.tif",
-                                "SOG_substrate_20m.tif", "WCVI_substrate_20m.tif",
-                                "QCS_substrate_20m.tif", "HG_substrate_20m.tif"]
+                # Detect scene type to determine which substrate files are needed
+                bops_identifiers = ["UXQ", "UXS", "UDU"]
+                is_bops_scene = any(identifier in safe_basename for identifier in bops_identifiers)
+                
+                if is_bops_scene:
+                    # BoPs scenes require 4 BoPs substrate files at 10m
+                    required_static = ["Bathymetry.tif", 
+                                     "BoPs_HG_10m.tif", "BoPs_NCC_10m.tif",
+                                     "BoPs_QCSSOG_10m.tif", "BoPs_WCVI_10m.tif"]
+                else:
+                    # Regular scenes require 5 regional substrate files at 20m
+                    required_static = ["Bathymetry.tif", "NCC_substrate_20m.tif",
+                                     "SOG_substrate_20m.tif", "WCVI_substrate_20m.tif",
+                                     "QCS_substrate_20m.tif", "HG_substrate_20m.tif"]
+                
+                # Check if Slope.tif exists, if not, we need to generate it
+                slope_path = None
+                try:
+                    slope_path = str(files("skema.static.bathy_substrate").joinpath("Slope.tif"))
+                except Exception:
+                    pass
+                
+                if slope_path and not os.path.exists(slope_path):
+                    # Generate Slope.tif from Bathymetry.tif
+                    console = Console()
+                    console.print("[yellow]Slope.tif not found. Generating from Bathymetry.tif...[/yellow]")
+                    try:
+                        bathy_path = str(files("skema.static.bathy_substrate").joinpath("Bathymetry.tif"))
+                        if os.path.exists(bathy_path):
+                            calculate_slope_for_raster(bathy_path, slope_path)
+                        else:
+                            console.print("[red]Bathymetry.tif not found, cannot generate slope.[/red]")
+                            required_static.append("Slope.tif")
+                    except Exception as e:
+                        console.print(f"[red]Error generating Slope.tif: {e}[/red]")
+                        required_static.append("Slope.tif")
+                else:
+                    # Slope.tif already exists, add it to required files
+                    required_static.append("Slope.tif")
+                
                 missing = []
                 for fname in required_static:
                     try:
@@ -1630,7 +1978,7 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
 
                 if missing:
                     raise FileNotFoundError(
-                        f"model_full requires bathymetry/substrate static files, but these are missing:\n"
+                        f"model_full requires bathymetry/substrate/slope static files, but these are missing:\n"
                         + "\n".join(f"  - {f}" for f in missing)
                         + "\n\nPlace these files in the static folder or use --model-type model_s2bandsandindices_only."
                     )
@@ -1656,6 +2004,6 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
         padding_mode='reflect'
     )
 
-    predictions = dataset.run_model_on_tiles(batch_size=8)
+    predictions = dataset.run_model_on_tiles(batch_size=8) # not weighted option for stiching the tiles: run_model_on_tiles_not_weighted(batch_size=8)
     output_path = os.path.join(input_dir, output_filename)
     dataset.save_output(predictions, output_path)

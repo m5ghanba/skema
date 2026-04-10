@@ -33,7 +33,7 @@
 
 ---
 
-## ⚡ Quick Start (Experienced Users)
+##  Quick Start (Experienced Users)
 ```bash
 pip install skema-kelp
 
@@ -67,7 +67,7 @@ If you use **SKeMa** in your research or work, please cite:
 
 ---
 
-## 🚀 Installation
+##  Installation
 
 Before you can set up SKeMa, you'll need **Python** (version **3.8 to 3.12**) installed on your computer. Python is a free tool, and no accounts or sign-ups are required to install it. We'll install it using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps. In some cases, however, you may need to use Command Prompt instead of PowerShell because PowerShell can handle command resolution and PATH variables differently, which may prevent it from recognizing Python even if it is installed. Additionally, if Python was installed only for your user account (and not system-wide), it may only be accessible from a normal Command Prompt session rather than one opened as Administrator, since elevated terminals can use a different set of environment variables.
 
@@ -248,10 +248,25 @@ pip install --upgrade pip setuptools wheel
 ### Static files  
 There are necessary **static files** that need to be manually downloaded and placed inside the corresponding directory as described below. These are bathymetry and substrate files from the whole coast of British Columbia that `skema` uses when predicting kelp on a Sentinel-2 image.  
 
-- The bathymetry file is a single TIFF raster (`Bathymetry_10m.tif`).  
-- There are five substrate TIFF rasters (`NCC_substrate_20m.tif`, `SOG_substrate_20m.tif`, `WCVI_substrate_20m.tif`, `QCS_substrate_20m.tif`, `HG_substrate_20m.tif`), each covering a different region of the BC coast.  
+#### Bathymetry File
+- The bathymetry file is a single TIFF raster (`Bathymetry.tif`).
 
-When SKeMa is installed via `pip`, there is a folder named `bathy_substrate` located in the following directory. Place all six static files inside this folder:
+#### Slope File
+- The slope file is a single TIFF raster (`Slope.tif`), derived from the bathymetry data.
+
+#### Substrate Files
+SKeMa uses two substrate data sources:
+ 
+**1. Regional Substrate Files (20m resolution) - For most BC coastal areas:**
+- Five TIFF rasters: `NCC_substrate_20m.tif`, `SOG_substrate_20m.tif`, `WCVI_substrate_20m.tif`, `QCS_substrate_20m.tif`, `HG_substrate_20m.tif`
+- Each covers a different region of the BC coast
+ 
+**2. BoPs Substrate Files (shapefiles origianlly, rasterized to 10m resolution):**
+- Four TIFF rasters: `BoPs_HG_10m.tif`, `BoPs_NCC_10m.tif`, `BoPs_QCSSOG_10m.tif`, `BoPs_WCVI_10m.tif`
+- Nearshore Bottom Patches dataset
+- **These files must be rasterized from shapefiles** - see instructions below
+
+When SKeMa is installed via `pip`, there is a folder named `bathy_substrate` located in the following directory. Place all bathymetry and substrate files inside this folder:
 
 On Windows:
 ```
@@ -277,6 +292,17 @@ skema/static/bathy_substrate/
 
 - Shallow substrate model (20m) of the Pacific Canadian coast (Haggarty et al., 2020):  
   https://osdp-psdo.canada.ca/dp/en/search/metadata/NRCAN-FGP-1-b100cf6c-7818-4748-9960-9eab2aa6a7a0  
+
+- Nearshore Bottom Patches (BoPs) substrate model:
+  - Full dataset & regional shapefile downloads: https://open.canada.ca/data/en/dataset/6cda0f8d-110e-423d-8d7a-bf8a40eaa26e
+  - Report (English): https://publications.gc.ca/collections/collection_2022/mpo-dfo/Fs97-6-3472-eng.pdf
+  - Report (French): https://waves-vagues.dfo-mpo.gc.ca/Library/41056164.pdf
+  
+  **⚠️ Important**: The BoPs substrate files are provided as shapefiles and must be rasterized before use:
+  1. Download the four regional shapefiles: `BoPs_HG.shp`, `BoPs_NCC.shp`, `BoPs_QCSSOG.shp`, `BoPs_WCVI.shp`
+  2. Use the provided Jupyter notebook (`notebooks/rasterizeNearshoreBottomPatches_BoPs.ipynb`) to convert each shapefile to a GeoTIFF at 10m resolution
+  3. The notebook will rasterize the `BType1` field (1=hard, 2=mixed, 3=soft substrate)
+  4. Place the resulting `BoPs_*_10m.tif` files in the `bathy_substrate` folder alongside the other static files
 
 If you encounter any issues downloading these files, please don't hesitate to contact us for assistance.
 
@@ -307,7 +333,7 @@ Skip this step if you don't have a GPU.
 
 ---
 
-## 🛰️ Usage
+##  Usage
 
 ### Activating the Virtual Environment
 
@@ -427,7 +453,7 @@ SKeMa will:
    └── mosaic_kelp_map.tif   ← combined prediction for all scenes
    ```
 
-The mosaic is reprojected to BC Albers (EPSG:3005) at 10 m resolution. Overlapping pixels between scenes are resolved by taking the maximum value, meaning a pixel is classified as kelp if any contributing scene predicted kelp there.
+The mosaic is reprojected to BC Albers (EPSG:3005) at 10 m resolution (this is important if skema is applied to other regions in the world). Overlapping pixels between scenes are resolved by taking the maximum value, meaning a pixel is classified as kelp if any contributing scene predicted kelp there.
 
 ### Model Types
 
@@ -436,6 +462,8 @@ SKeMa supports two model types:
 1. **`model_full`** (default): Uses all available data including Sentinel-2 bands, bathymetry, and substrate information. This model provides the most accurate predictions but requires bathymetry and substrate static files.
 
 2. **`model_s2bandsandindices_only`**: Uses only Sentinel-2 bands and derived spectral indices. This model does not require bathymetry or substrate files, making it suitable for areas outside British Columbia or when static files are unavailable.
+
+3. **`model_ensemble`**: An ensemble model that combines predictions from both `model_full` and `model_s2bandsandindices_only` by averaging their outputs. This model requires the same static files as `model_full` (bathymetry, slope, substrate) and can provide more robust predictions by leveraging both modeling approaches.
 
 To specify the model type, use the `--model-type` flag:
 
@@ -448,10 +476,12 @@ skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif -
 # Using S2-only model (no bathymetry/substrate required)
 skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_s2bandsandindices_only
 
+# Using ensemble model (averages predictions from both models)
+skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_ensemble
+ 
 # Batch mode also supports --model-type
-skema --input-dir "path/to/folder/with/safe/files/" --output-filename output.tif --batch-dir --model-type model_s2bandsandindices_only
+skema --input-dir "path/to/folder/with/safe/files/" --output-filename output.tif --batch-dir --model-type model_ensemble
 ```
-
 If `--model-type` is not specified, the tool defaults to `model_full`.
 
 ### Output Files
@@ -465,7 +495,8 @@ After running, the tool generates a folder with the same name as the `.SAFE` fil
 2. **`<SAFE_name>_B5B6B7B8A_B11B12.tif`**: a 20 m resolution, 6-band GeoTIFF containing Sentinel-2 bands B05, B06, B07, B8A, B11, and B12.  
 3. **`<SAFE_name>_Bathymetry.tif`**: bathymetry data aligned and warped to the Sentinel-2 pixel grid.  
 4. **`<SAFE_name>_Substrate.tif`**: substrate classification data aligned and warped to the Sentinel-2 pixel grid.  
-5. **`output.tif`** (or the filename you specify): a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.  
+5. **`<SAFE_name>_Slope.tif`**: slope data (derived from bathymetry) aligned and warped to the Sentinel-2 pixel grid.  
+6. **`output.tif`** (or the filename you specify): a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.  
 
 **For `model_s2bandsandindices_only`:**
 1. **`<SAFE_name>_B2B3B4B8.tif`**: a 10 m resolution, 4-band GeoTIFF containing Sentinel-2 bands B02 (Blue), B03 (Green), B04 (Red), and B08 (Near-Infrared).  
@@ -493,12 +524,19 @@ skema/
 │       │  
 │       └── bathy_substrate/  
 │           ├── __init__.py  
-│           ├── Bathymetry_10m.tif  
+│           ├── Bathymetry.tif  
+│           ├── Slope.tif  
 │           ├── NCC_substrate_20m.tif  
 │           ├── SOG_substrate_20m.tif  
 │           ├── WCVI_substrate_20m.tif  
 │           ├── QCS_substrate_20m.tif  
-│           └── HG_substrate_20m.tif  
+│           ├── HG_substrate_20m.tif  
+│           ├── BoPs_HG_10m.tif
+│           ├── BoPs_NCC_10m.tif
+│           ├── BoPs_QCSSOG_10m.tif
+│           └── BoPs_WCVI_10m.tif
+├── notebooks/
+│   └── rasterizeNearshoreBottomPatches_BoPs.ipynb
 ├── pyproject.toml  
 ├── setup.py  
 ├── requirements.txt  
