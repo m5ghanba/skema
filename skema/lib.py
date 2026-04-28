@@ -1,4 +1,4 @@
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 import rasterio
 
@@ -499,7 +499,7 @@ def warp_bathy_and_subs(safe_folder_root, basename):
     console = Console()
     
     # Detect if this is a BoPs scene (UXQ, UXS, or UDU in basename)
-    bops_identifiers = ["UXQ", "UXS", "UDU"]
+    bops_identifiers = []
     is_bops_scene = any(identifier in basename for identifier in bops_identifiers)
     
     # Look for _B2B3B4B8.tif inside each subfolder
@@ -526,7 +526,7 @@ def warp_bathy_and_subs(safe_folder_root, basename):
                 "BoPs_QCSSOG_10m.tif": "_SubsQCSSOG.tif",
                 "BoPs_WCVI_10m.tif": "_SubsWCVI.tif",
             }
-            console.print(f"[cyan]Detected BoPs scene ({basename}). Using 10m BoPs substrate files.[/cyan]")
+            # console.print(f"[cyan]Detected BoPs scene ({basename}). Using 10m BoPs substrate files.[/cyan]")
         else:
             # Regular scenes use 5 substrate files at 20m resolution
             input_files = {
@@ -538,7 +538,7 @@ def warp_bathy_and_subs(safe_folder_root, basename):
                 "QCS_substrate_20m.tif": "_SubsQCS.tif",
                 "HG_substrate_20m.tif": "_SubsHG.tif",
             }
-            console.print(f"[cyan]Detected regular scene ({basename}). Using 20m regional substrate files.[/cyan]")
+            # console.print(f"[cyan]Detected regular scene ({basename}). Using 20m regional substrate files.[/cyan]")
 
         with Progress(
             SpinnerColumn(),
@@ -648,7 +648,7 @@ def merge_substrate_files_single(safe_output_dir):
     base_name = b2348_file.replace("_B2B3B4B8.tif", "")
     
     # Detect if this is a BoPs scene
-    bops_identifiers = ["UXQ", "UXS", "UDU"]
+    bops_identifiers = []
     is_bops_scene = any(identifier in base_name for identifier in bops_identifiers)
     
     if is_bops_scene:
@@ -1928,7 +1928,7 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
                 console.print("[yellow]Bathymetry, substrate, and slope TIFFs already exist, skipping.[/yellow]")
             else:
                 # Detect scene type to determine which substrate files are needed
-                bops_identifiers = ["UXQ", "UXS", "UDU"]
+                bops_identifiers = []
                 is_bops_scene = any(identifier in safe_basename for identifier in bops_identifiers)
                 
                 if is_bops_scene:
