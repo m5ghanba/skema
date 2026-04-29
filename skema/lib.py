@@ -1,4 +1,4 @@
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 import rasterio
 
@@ -487,20 +487,19 @@ def calculate_slope_for_raster(input_tiff, output_tiff, block_size=2048):
     console.print(f"[green]✓[/green] Slope calculation complete: {output_tiff}")
 
 
-def warp_bathy_and_subs(safe_folder_root, basename):
+def warp_bathy_and_subs(safe_folder_root, basename, use_bops_substrate=False):
     """
     Aligns bathymetry, slope, and substrate rasters to match the CRS, resolution (10m), and extent 
     of the reference Sentinel-2 image using bilinear resampling.
     
-    Automatically detects scene type and uses appropriate substrate files:
-    - BoPs scenes (UXQ, UXS, UDU): uses 4 BoPs substrate files at 10m resolution
-    - Regular scenes: uses 5 regional substrate files at 20m resolution
+    Uses substrate files determined by use_bops_substrate:
+    - use_bops_substrate=True:  uses 4 BoPs substrate files at 10m resolution
+    - use_bops_substrate=False: uses 5 regional RF substrate files at 20m resolution
     """
     console = Console()
     
-    # Detect if this is a BoPs scene (UXQ, UXS, or UDU in basename)
-    bops_identifiers = []
-    is_bops_scene = any(identifier in basename for identifier in bops_identifiers)
+    # Substrate source is set explicitly by the caller
+    is_bops_scene = use_bops_substrate
     
     # Look for _B2B3B4B8.tif inside each subfolder
     for folder_name in os.listdir(safe_folder_root):
@@ -626,15 +625,15 @@ def fill_nodata_fixed_value(input_file, output_file, fill_value):
 
 
 
-def merge_substrate_files_single(safe_output_dir):
+def merge_substrate_files_single(safe_output_dir, use_bops_substrate=False):
     """
     Merges substrate rasters in a single SAFE output folder into _Subs.tif.
     
-    Automatically detects scene type and uses appropriate substrate files:
-    - BoPs scenes (UXQ, UXS, UDU): merges 4 BoPs substrate files (valid values: 1-3)
-    - Regular scenes: merges 5 regional substrate files (valid values: 1-4)
+    Uses substrate files determined by use_bops_substrate:
+    - use_bops_substrate=True:  merges 4 BoPs substrate files (valid values: 1-3)
+    - use_bops_substrate=False: merges 5 regional RF substrate files (valid values: 1-4)
     
-    For BoPs scenes, remaps substrate value 4 to 3 (since BoPs only has 3 classes).
+    For RF scenes, remaps substrate value 4 to 3 to ensure a consistent 3-class scheme.
     """
     
     console = Console()
@@ -647,9 +646,8 @@ def merge_substrate_files_single(safe_output_dir):
     
     base_name = b2348_file.replace("_B2B3B4B8.tif", "")
     
-    # Detect if this is a BoPs scene
-    bops_identifiers = []
-    is_bops_scene = any(identifier in base_name for identifier in bops_identifiers)
+    # Substrate source is set explicitly by the caller
+    is_bops_scene = use_bops_substrate
     
     if is_bops_scene:
         # BoPs scenes use 4 substrate files
@@ -683,10 +681,6 @@ def merge_substrate_files_single(safe_output_dir):
             mask = np.isin(data, list(valid_values))
             merged_data[mask] = data[mask]
     
-    # Remap substrate value 4 to 3 regardless of scene type.
-    # Value 4 only appears in scenes using the original 20m substrate files;
-    # remapping ensures a consistent 3-class scheme across all scene types.
-    merged_data[merged_data == 4] = 3
 
     meta.update(dtype=rasterio.uint8, nodata=0, compress="LZW")
     with rasterio.open(output_file, "w", **meta) as dst:
@@ -738,7 +732,7 @@ def apply_fill_nodata_single(safe_output_dir, fill_value_subs=0, fill_value_bath
     return subs_file, bathy_file, slope_file
 
 
-def create_mosaic(tif_paths, output_path, target_resolution_meters=10):
+def create_mosaic(tif_paths, output_path, target_resolution_meters=10, soft_substrate_masking=False):
     """
     Create a maximum-value mosaic from a list of kelp prediction GeoTIFFs,
     reprojected to BC Albers (EPSG:3005) at a fixed resolution.
@@ -750,6 +744,8 @@ def create_mosaic(tif_paths, output_path, target_resolution_meters=10):
         tif_paths (list[str]): Paths to the per-scene prediction TIFFs.
         output_path (str): Where to save mosaic_kelp_map.tif.
         target_resolution_meters (float): Output pixel size in metres (default 10).
+        soft_substrate_masking (bool): if True, also creates a mosaic from the
+            substrate-masked per-scene TIFFs, saved as mosaic_kelp_map_substrate_masked.tif.
     """
 
     console = Console()
@@ -832,6 +828,49 @@ def create_mosaic(tif_paths, output_path, target_resolution_meters=10):
         dst.write(mosaic, 1)
 
     console.print(f"[green]✓[/green] Mosaic saved to [bold]{output_path}[/bold].")
+
+    # ── Soft substrate masking mosaic (optional second mosaic output) ─────
+    if soft_substrate_masking:
+        stem = os.path.splitext(os.path.basename(output_path))[0]
+        masked_dir = os.path.dirname(output_path)
+        masked_tif_paths = []
+        for p in valid_paths:
+            scene_stem = os.path.splitext(os.path.basename(p))[0]
+            masked_candidate = os.path.join(os.path.dirname(p), f"{scene_stem}_substrate_masked.tif")
+            if os.path.exists(masked_candidate):
+                masked_tif_paths.append(masked_candidate)
+            else:
+                console.print(f"[yellow]Warning: substrate-masked file not found for {os.path.basename(p)}, skipping in masked mosaic.[/yellow]")
+        if masked_tif_paths:
+            masked_mosaic_path = os.path.join(masked_dir, f"{stem}_substrate_masked.tif")
+            console.print(f"[cyan]Building substrate-masked mosaic from {len(masked_tif_paths)} scene(s)...[/cyan]")
+            masked_mosaic = np.zeros((height, width), dtype=np.uint8)
+            for p in masked_tif_paths:
+                with rasterio.open(p) as src:
+                    tile = np.zeros((height, width), dtype=np.uint8)
+                    reproject(
+                        source=rasterio.band(src, 1),
+                        destination=tile,
+                        src_transform=src.transform,
+                        src_crs=src.crs,
+                        dst_transform=mosaic_transform,
+                        dst_crs=target_crs,
+                        resampling=Resampling.nearest,
+                    )
+                    masked_mosaic = np.maximum(masked_mosaic, tile)
+            with rasterio.open(
+                masked_mosaic_path, "w",
+                driver="GTiff",
+                height=height, width=width,
+                count=1, dtype=np.uint8,
+                crs=target_crs,
+                transform=mosaic_transform,
+                compress="lzw",
+            ) as dst:
+                dst.write(masked_mosaic, 1)
+            console.print(f"[green]✓[/green] Substrate-masked mosaic saved to [bold]{masked_mosaic_path}[/bold].")
+        else:
+            console.print("[yellow]No substrate-masked scene files found; masked mosaic skipped.[/yellow]")
 
 
 def normalize_input_mean_std(image_hwc, mean_per_channel, std_per_channel, epsilon=1e-8):
@@ -1241,12 +1280,20 @@ class segModel(pl.LightningModule):
         return
 
 
-def load_model(model_type='model_full'):
-    """Load the appropriate model(s) based on model_type."""
+def load_model(model_type='model_full', use_bops_substrate=False):
+    """Load the appropriate model(s) based on model_type.
+
+    use_bops_substrate selects the weights trained with BoPs substrate (True)
+    or RF substrate (False, default). Only applies to model_full and model_ensemble.
+    """
     if model_type == 'model_full':
         in_channels = 13
-        MODEL_URL = "https://huggingface.co/m5ghanba/SKeMa/resolve/main/model.pth"# use hf hosted model instead of github releases"https://github.com/m5ghanba/skema/releases/download/v0.2.0/model.pth" https://huggingface.co/m5ghanba/SKeMa/blob/main/model.pth
-        model_filename = f"model_v{__version__}.pth"
+        if use_bops_substrate:
+            MODEL_URL = "https://huggingface.co/m5ghanba/SKeMa/resolve/main/model_full_bops_subs.pth"
+            model_filename = f"model_full_bops_subs_v{__version__}.pth"
+        else:
+            MODEL_URL = "https://huggingface.co/m5ghanba/SKeMa/resolve/main/model_full_rf_subs.pth"
+            model_filename = f"model_full_rf_subs_v{__version__}.pth"
         
         # Create model
         model = segModel("Unet", "tu-maxvit_tiny_tf_512", in_channels=in_channels, out_classes=OUT_CLASSES)
@@ -1291,8 +1338,12 @@ def load_model(model_type='model_full'):
         
         # Load model_full
         in_channels_full = 13
-        MODEL_URL_full = "https://huggingface.co/m5ghanba/SKeMa/resolve/main/model.pth"
-        model_filename_full = f"model_v{__version__}.pth"
+        if use_bops_substrate:
+            MODEL_URL_full = "https://huggingface.co/m5ghanba/SKeMa/resolve/main/model_full_bops_subs.pth"
+            model_filename_full = f"model_full_bops_subs_v{__version__}.pth"
+        else:
+            MODEL_URL_full = "https://huggingface.co/m5ghanba/SKeMa/resolve/main/model_full_rf_subs.pth"
+            model_filename_full = f"model_full_rf_subs_v{__version__}.pth"
         LOCAL_PATH_full = os.path.join(os.path.expanduser("~"), ".skema", model_filename_full)
         
         os.makedirs(os.path.dirname(LOCAL_PATH_full), exist_ok=True)
@@ -1884,7 +1935,7 @@ class DatasetInference(SatelliteDataset):
 # dataset.save_output(predictions, output_path)
 
 
-def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model_type='model_full'): 
+def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model_type='model_full', soft_substrate_masking=False, use_bops_substrate=False): 
     """
     Perform semantic segmentation inference on a Sentinel-2 scene.
     
@@ -1893,10 +1944,14 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
     - output_filename: output TIFF filename to save prediction
     - mean_per_channel, std_per_channel: normalization stats used during training
     - model_type: 'model_full' (with substrate/bathymetry) or 'model_s2bandsandindices_only'
+    - soft_substrate_masking: if True, also saves a substrate-masked prediction where kelp
+      pixels overlapping substrate classes 3 or 4 are set to 0 (no kelp).
+    - use_bops_substrate: if True, use BoPs substrate files and the BoPs-trained model weights;
+      if False (default), use RF substrate files and RF-trained model weights.
     """
     
     # Load appropriate model
-    model = load_model(model_type)
+    model = load_model(model_type, use_bops_substrate=use_bops_substrate)
     
     # Preprocessing if input_dir is a SAFE folder
     if input_dir.endswith(".SAFE") and os.path.isdir(input_dir):
@@ -1919,73 +1974,62 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
 
         # Steps 2-4: Only for model_full and model_ensemble (skip if bathymetry, substrate, and slope already exist)
         if model_type == 'model_full' or model_type == 'model_ensemble':
-            bathy_file = os.path.join(output_folder, f"{safe_basename}_Bathymetry.tif")
-            subs_file = os.path.join(output_folder, f"{safe_basename}_Substrate.tif")
-            slope_file = os.path.join(output_folder, f"{safe_basename}_Slope.tif")
-
-            if os.path.exists(bathy_file) and os.path.exists(subs_file) and os.path.exists(slope_file):
-                console = Console()
-                console.print("[yellow]Bathymetry, substrate, and slope TIFFs already exist, skipping.[/yellow]")
+            # Substrate source is set explicitly by the caller via use_bops_substrate
+            if use_bops_substrate:
+                # BoPs substrate: 4 files at 10m
+                required_static = ["Bathymetry.tif", 
+                                    "BoPs_HG_10m.tif", "BoPs_NCC_10m.tif",
+                                    "BoPs_QCSSOG_10m.tif", "BoPs_WCVI_10m.tif"]
             else:
-                # Detect scene type to determine which substrate files are needed
-                bops_identifiers = []
-                is_bops_scene = any(identifier in safe_basename for identifier in bops_identifiers)
-                
-                if is_bops_scene:
-                    # BoPs scenes require 4 BoPs substrate files at 10m
-                    required_static = ["Bathymetry.tif", 
-                                     "BoPs_HG_10m.tif", "BoPs_NCC_10m.tif",
-                                     "BoPs_QCSSOG_10m.tif", "BoPs_WCVI_10m.tif"]
-                else:
-                    # Regular scenes require 5 regional substrate files at 20m
-                    required_static = ["Bathymetry.tif", "NCC_substrate_20m.tif",
-                                     "SOG_substrate_20m.tif", "WCVI_substrate_20m.tif",
-                                     "QCS_substrate_20m.tif", "HG_substrate_20m.tif"]
-                
-                # Check if Slope.tif exists, if not, we need to generate it
-                slope_path = None
+                # RF substrate: 5 regional files at 20m
+                required_static = ["Bathymetry.tif", "NCC_substrate_20m.tif",
+                                    "SOG_substrate_20m.tif", "WCVI_substrate_20m.tif",
+                                    "QCS_substrate_20m.tif", "HG_substrate_20m.tif"]
+            
+            # Check if Slope.tif exists, if not, we need to generate it
+            slope_path = None
+            try:
+                slope_path = str(files("skema.static.bathy_substrate").joinpath("Slope.tif"))
+            except Exception:
+                pass
+            
+            if slope_path and not os.path.exists(slope_path):
+                # Generate Slope.tif from Bathymetry.tif
+                console = Console()
+                console.print("[yellow]Slope.tif not found. Generating from Bathymetry.tif...[/yellow]")
                 try:
-                    slope_path = str(files("skema.static.bathy_substrate").joinpath("Slope.tif"))
-                except Exception:
-                    pass
-                
-                if slope_path and not os.path.exists(slope_path):
-                    # Generate Slope.tif from Bathymetry.tif
-                    console = Console()
-                    console.print("[yellow]Slope.tif not found. Generating from Bathymetry.tif...[/yellow]")
-                    try:
-                        bathy_path = str(files("skema.static.bathy_substrate").joinpath("Bathymetry.tif"))
-                        if os.path.exists(bathy_path):
-                            calculate_slope_for_raster(bathy_path, slope_path)
-                        else:
-                            console.print("[red]Bathymetry.tif not found, cannot generate slope.[/red]")
-                            required_static.append("Slope.tif")
-                    except Exception as e:
-                        console.print(f"[red]Error generating Slope.tif: {e}[/red]")
+                    bathy_path = str(files("skema.static.bathy_substrate").joinpath("Bathymetry.tif"))
+                    if os.path.exists(bathy_path):
+                        calculate_slope_for_raster(bathy_path, slope_path)
+                    else:
+                        console.print("[red]Bathymetry.tif not found, cannot generate slope.[/red]")
                         required_static.append("Slope.tif")
-                else:
-                    # Slope.tif already exists, add it to required files
+                except Exception as e:
+                    console.print(f"[red]Error generating Slope.tif: {e}[/red]")
                     required_static.append("Slope.tif")
-                
-                missing = []
-                for fname in required_static:
-                    try:
-                        p = str(files("skema.static.bathy_substrate").joinpath(fname))
-                        if not os.path.exists(p):
-                            missing.append(fname)
-                    except Exception:
+            else:
+                # Slope.tif already exists, add it to required files
+                required_static.append("Slope.tif")
+            
+            missing = []
+            for fname in required_static:
+                try:
+                    p = str(files("skema.static.bathy_substrate").joinpath(fname))
+                    if not os.path.exists(p):
                         missing.append(fname)
+                except Exception:
+                    missing.append(fname)
 
-                if missing:
-                    raise FileNotFoundError(
-                        f"model_full requires bathymetry/substrate/slope static files, but these are missing:\n"
-                        + "\n".join(f"  - {f}" for f in missing)
-                        + "\n\nPlace these files in the static folder or use --model-type model_s2bandsandindices_only."
-                    )
+            if missing:
+                raise FileNotFoundError(
+                    f"model_full requires bathymetry/substrate/slope static files, but these are missing:\n"
+                    + "\n".join(f"  - {f}" for f in missing)
+                    + "\n\nPlace these files in the static folder or use --model-type model_s2bandsandindices_only."
+                )
 
-                warp_bathy_and_subs(parent_dir, safe_basename)
-                merge_substrate_files_single(output_folder)
-                apply_fill_nodata_single(output_folder)
+            warp_bathy_and_subs(parent_dir, safe_basename, use_bops_substrate=use_bops_substrate)
+            merge_substrate_files_single(output_folder, use_bops_substrate=use_bops_substrate)
+            apply_fill_nodata_single(output_folder)
 
         input_dir = output_folder
 
@@ -2007,3 +2051,21 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
     predictions = dataset.run_model_on_tiles(batch_size=8) # not weighted option for stiching the tiles: run_model_on_tiles_not_weighted(batch_size=8)
     output_path = os.path.join(input_dir, output_filename)
     dataset.save_output(predictions, output_path)
+
+        # ── Soft substrate masking (optional second output) ────────────────────────
+    if soft_substrate_masking:
+        console = Console()
+        # Locate the merged substrate file for this scene
+        subs_candidates = [f for f in os.listdir(input_dir) if f.endswith('_Substrate.tif')]
+        if not subs_candidates:
+            console.print('[yellow]Warning: _Substrate.tif not found in output folder; substrate-masked output skipped.[/yellow]')
+        else:
+            subs_path = os.path.join(input_dir, subs_candidates[0])
+            with rasterio.open(subs_path) as subs_src:
+                substrate = subs_src.read(1)
+            masked_predictions = predictions.copy()
+            masked_predictions[(predictions == 1) & ((substrate == 3) | (substrate == 4))] = 0
+            stem = output_filename[:-4] if output_filename.lower().endswith('.tif') else output_filename
+            masked_output_path = os.path.join(input_dir, f'{stem}_substrate_masked.tif')
+            dataset.save_output(masked_predictions, masked_output_path)
+            console.print(f'[green]✓[/green] Substrate-masked kelp map saved to [bold]{masked_output_path}[bold].')

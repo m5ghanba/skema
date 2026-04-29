@@ -457,7 +457,7 @@ The mosaic is reprojected to BC Albers (EPSG:3005) at 10 m resolution (this is i
 
 ### Model Types
 
-SKeMa supports two model types:
+SKeMa supports a few model types, selectable via the --model-type flag::
 
 1. **`model_full`** (default): Uses all available data including Sentinel-2 bands, bathymetry, and substrate information. This model provides the most accurate predictions but requires bathymetry and substrate static files.
 
@@ -465,24 +465,37 @@ SKeMa supports two model types:
 
 3. **`model_ensemble`**: An ensemble model that combines predictions from both `model_full` and `model_s2bandsandindices_only` by averaging their outputs. This model requires the same static files as `model_full` (bathymetry, slope, substrate) and can provide more robust predictions by leveraging both modeling approaches.
 
-To specify the model type, use the `--model-type` flag:
+If `--model-type` is not specified, the tool defaults to `model_s2bandsandindices_only`.
+
+### Optional Flags
+
+`--use-bops-substrate` (model_full and model_ensemble only): By default, model_full and model_ensemble use a substrate layer derived from a Random Forest (RF) model. When --use-bops-substrate is set, SKeMa instead uses substrate layers from the Bottom Patches (BoPs) dataset. Each substrate source has its own trained model weights, which are downloaded automatically. This flag cannot be used with model_s2bandsandindices_only.
+
+`--soft-substrate-masking` (model_full and model_ensemble only): When set, SKeMa produces a second output alongside the normal prediction. Any pixel predicted as kelp that overlaps with sandy or muddy substrate classes is reclassified to 0 (no kelp). Use this with care — depending on substrate data quality in your area, it may remove a notable number of true kelp pixels. In batch mode, a second substrate-masked mosaic is also created.
+
+### Usage Examples
 
 **Note**: Scroll right to see the complete command if it extends beyond your screen.
 
 ```bash
-# Using the full model (default - includes bathymetry and substrate)
+# Default: S2 bands and indices only (no static files required)
+skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif
+
+# Full model with RF substrate (default substrate source)
 skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_full
 
-# Using S2-only model (no bathymetry/substrate required)
-skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_s2bandsandindices_only
+# Full model with BoPs substrate
+skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_full --use-bops-substrate
 
-# Using ensemble model (averages predictions from both models)
-skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_ensemble
- 
-# Batch mode also supports --model-type
-skema --input-dir "path/to/folder/with/safe/files/" --output-filename output.tif --batch-dir --model-type model_ensemble
+# Ensemble model with BoPs substrate
+skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_ensemble --use-bops-substrate
+
+# Full model with soft substrate masking (produces a second masked output)
+skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_full --soft-substrate-masking
+
+# Batch mode with ensemble model and BoPs substrate
+skema --input-dir "path/to/folder/with/safe/files/" --output-filename output.tif --batch-dir --model-type model_ensemble --use-bops-substrate
 ```
-If `--model-type` is not specified, the tool defaults to `model_full`.
 
 ### Output Files
 
@@ -490,24 +503,28 @@ If `--model-type` is not specified, the tool defaults to `model_full`.
 
 After running, the tool generates a folder with the same name as the `.SAFE` file (without the `.SAFE` extension), located alongside it. Inside this folder, you'll find:
 
-**For `model_full`:**
+**For `model_s2bandsandindices_only`:**
+1. **`<SAFE_name>_B2B3B4B8.tif`**: a 10 m resolution, 4-band GeoTIFF containing Sentinel-2 bands B02 (Blue), B03 (Green), B04 (Red), and B08 (Near-Infrared).  
+2. **`<SAFE_name>_B5B6B7B8A_B11B12.tif`**: a 20 m resolution, 6-band GeoTIFF containing Sentinel-2 bands B05, B06, B07, B8A, B11, and B12.  
+3. **`output.tif`** (or the filename you specify): a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.
+
+**For `model_full`and `model_ensemble`:**
 1. **`<SAFE_name>_B2B3B4B8.tif`**: a 10 m resolution, 4-band GeoTIFF containing Sentinel-2 bands B02 (Blue), B03 (Green), B04 (Red), and B08 (Near-Infrared).  
 2. **`<SAFE_name>_B5B6B7B8A_B11B12.tif`**: a 20 m resolution, 6-band GeoTIFF containing Sentinel-2 bands B05, B06, B07, B8A, B11, and B12.  
 3. **`<SAFE_name>_Bathymetry.tif`**: bathymetry data aligned and warped to the Sentinel-2 pixel grid.  
 4. **`<SAFE_name>_Substrate.tif`**: substrate classification data aligned and warped to the Sentinel-2 pixel grid.  
 5. **`<SAFE_name>_Slope.tif`**: slope data (derived from bathymetry) aligned and warped to the Sentinel-2 pixel grid.  
 6. **`output.tif`** (or the filename you specify): a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.  
+7. **`output_substrate_masked.tif`** (only when --soft-substrate-masking is set): a second binary GeoTIFF where kelp pixels overlapping sandy or muddy substrate classes are set to 0.
 
-**For `model_s2bandsandindices_only`:**
-1. **`<SAFE_name>_B2B3B4B8.tif`**: a 10 m resolution, 4-band GeoTIFF containing Sentinel-2 bands B02 (Blue), B03 (Green), B04 (Red), and B08 (Near-Infrared).  
-2. **`<SAFE_name>_B5B6B7B8A_B11B12.tif`**: a 20 m resolution, 6-band GeoTIFF containing Sentinel-2 bands B05, B06, B07, B8A, B11, and B12.  
-3. **`output.tif`** (or the filename you specify): a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.
 
 #### Batch Mode
 
 In addition to the per-scene output folders described above (with `<SAFE_name>_output.tif` inside each), batch mode produces one additional file in the input directory:
 
 - **`mosaic_kelp_map.tif`**: a single binary GeoTIFF mosaic merging all scene predictions, in BC Albers projection (EPSG:3005) at 10 m resolution.
+
+- **`mosaic_kelp_map_substrate_masked.tif`**: (only when --soft-substrate-masking is set): a second mosaic built from the per-scene substrate-masked predictions, in BC Albers projection (EPSG:3005) at 10 m resolution.
 ---
 
 ## ⚙️ Project Structure

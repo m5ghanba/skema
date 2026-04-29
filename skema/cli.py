@@ -14,12 +14,21 @@ from skema.lib import segment, create_mosaic
 @click.option('--output-filename', required=True, help='Filename for the output prediction TIFF, e.g., output.tif. In batch mode, this is used as a postfix appended to each scene name.')
 @click.option('--model-type', 
               type=click.Choice(['model_full', 'model_s2bandsandindices_only', 'model_ensemble'], case_sensitive=False),
-              default='model_full',
-              help='Model type to use: "model_full" (with substrate, bathymetry, and slope), "model_s2bandsandindices_only" (S2 bands and indices only), or "model_ensemble" (ensemble of both models). Default: model_full.')
+              default='model_s2bandsandindices_only',
+              help='Model type to use: "model_full" (with substrate, bathymetry, and slope), "model_s2bandsandindices_only" (S2 bands and indices only), or "model_ensemble" (ensemble of both models). Default: model_s2bandsandindices_only.')
 @click.option('--batch-dir', is_flag=True, default=False,
               help='When set, --input-dir is treated as a directory containing multiple unzipped .SAFE folders. '
                    'Each scene is processed individually and a mosaic (mosaic_kelp_map.tif) is created in --input-dir afterwards.')
-def main(input_dir, output_filename, model_type, batch_dir):
+@click.option('--soft-substrate-masking', is_flag=True, default=False,
+              help='When set, an additional substrate-masked prediction is saved alongside each output, '
+                   'where kelp pixels overlapping substrate classes 3 or 4 are set to 0 (no kelp). '
+                   'Only valid for model_full and model_ensemble. '
+                   'In batch mode, a second substrate-masked mosaic is also created.')
+@click.option('--use-bops-substrate', is_flag=True, default=False,
+              help='When set, use BoPs substrate files and the BoPs-trained model weights. '
+                   'When not set (default), RF substrate files and RF-trained model weights are used. '
+                   'Only valid for model_full and model_ensemble.')
+def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_masking, use_bops_substrate):
     """Segment a Sentinel-2 scene and output a kelp mask.
 
     Single scene:
@@ -42,18 +51,48 @@ def main(input_dir, output_filename, model_type, batch_dir):
     import torch
     device = "GPU" if torch.cuda.is_available() else "CPU"
     click.echo(f"Computing Device: {device}")
+    click.echo(f"Soft Substrate Masking: {'Yes' if soft_substrate_masking else 'No'}")
+    click.echo(f"Substrate Source:       {'None' if model_type == 'model_s2bandsandindices_only' else ('BoPs' if use_bops_substrate else 'RF Model')}")
     click.echo("="*60 + "\n")
 
-    # Define the normalization stats based on model type
+    # Validate --soft-substrate-masking is not used with band-only model
+    if soft_substrate_masking and model_type == 'model_s2bandsandindices_only':
+        raise click.UsageError(
+            "--soft-substrate-masking requires a substrate channel and cannot be used with "
+            "'model_s2bandsandindices_only'. "
+            "Please use --model-type model_full or --model-type model_ensemble."
+        )
+
+    # Validate --use-bops-substrate is not used with band-only model
+    if use_bops_substrate and model_type == 'model_s2bandsandindices_only':
+        raise click.UsageError(
+            "--use-bops-substrate requires a substrate channel and cannot be used with "
+            "'model_s2bandsandindices_only'. "
+            "Please use --model-type model_full or --model-type model_ensemble."
+        )
+
+    # Define the normalization stats based on model type and substrate source
     if model_type == 'model_full' or model_type == 'model_ensemble':
-        mean_per_channel = [2.02127847e+02, 2.64991799e+02, 1.45913497e+02, 9.57456953e+02,
-                            3.20302883e+02, 1.37548690e+00, -6.30723576e+00, 7.60650406e+00,
-                            3.66107438e-02, 1.84492036e-01, -1.84492036e-01, 1.56750584e+00,
-                            9.99078992e-02]
-        std_per_channel = [1.61504107e+02, 2.22303637e+02, 2.03997451e+02, 1.26105656e+03,
-                            3.79069759e+02, 1.36767732e+00, 2.35930351e+02, 1.14107889e+01,
-                            6.71879776e-01, 7.23202999e-01, 7.23202999e-01, 3.86945642e+00,
-                            4.06695959e-01]
+        if use_bops_substrate:
+            # BoPs substrate stats (6th value differs: substrate channel mean/std)
+            mean_per_channel = [2.02127847e+02, 2.64991799e+02, 1.45913497e+02, 9.57456953e+02,
+                                3.20302883e+02, 8.15331190e-01, -6.30723576e+00, 7.60650406e+00,
+                                3.66107438e-02, 1.84492036e-01, -1.84492036e-01, 1.56750584e+00,
+                                9.99078992e-02]
+            std_per_channel = [1.61504107e+02, 2.22303637e+02, 2.03997451e+02, 1.26105656e+03,
+                                3.79069759e+02, 1.09273473e+00, 2.35930351e+02, 1.14107889e+01,
+                                6.71879776e-01, 7.23202999e-01, 7.23202999e-01, 3.86945642e+00,
+                                4.06695959e-01]
+        else:
+            # RF substrate stats (default)
+            mean_per_channel = [2.02127847e+02, 2.64991799e+02, 1.45913497e+02, 9.57456953e+02,
+                                3.20302883e+02, 1.37548690e+00, -6.30723576e+00, 7.60650406e+00,
+                                3.66107438e-02, 1.84492036e-01, -1.84492036e-01, 1.56750584e+00,
+                                9.99078992e-02]
+            std_per_channel = [1.61504107e+02, 2.22303637e+02, 2.03997451e+02, 1.26105656e+03,
+                                3.79069759e+02, 1.36767732e+00, 2.35930351e+02, 1.14107889e+01,
+                                6.71879776e-01, 7.23202999e-01, 7.23202999e-01, 3.86945642e+00,
+                                4.06695959e-01]
 
     else:  # model_s2bandsandindices_only                       
         mean_per_channel = [2.08900522e+02, 2.70272557e+02, 1.52312422e+02, 9.87182507e+02,
@@ -93,7 +132,7 @@ def main(input_dir, output_filename, model_type, batch_dir):
 
             click.echo(f"[{idx}/{len(safe_folders)}] Processing: {safe_basename}")
 
-            segment(safe_path, scene_output_filename, mean_per_channel, std_per_channel, model_type)
+            segment(safe_path, scene_output_filename, mean_per_channel, std_per_channel, model_type, soft_substrate_masking, use_bops_substrate)
 
             # The segment() function saves the result inside a folder named after the SAFE basename,
             # located next to the .SAFE file (i.e. inside input_dir).
@@ -106,7 +145,7 @@ def main(input_dir, output_filename, model_type, batch_dir):
         click.echo("="*60)
         click.echo("All scenes processed. Creating mosaic...")
         mosaic_path = os.path.join(input_dir, "mosaic_kelp_map.tif")
-        create_mosaic(processed_output_paths, mosaic_path)
+        create_mosaic(processed_output_paths, mosaic_path, soft_substrate_masking=soft_substrate_masking)
         click.echo("="*60 + "\n")
 
     # ------------------------------------------------------------------ #
@@ -122,7 +161,7 @@ def main(input_dir, output_filename, model_type, batch_dir):
             raise click.BadParameter(
                 f"The path '{input_dir}' does not exist or is not a directory."
             )
-        segment(input_dir, output_filename, mean_per_channel, std_per_channel, model_type)
+        segment(input_dir, output_filename, mean_per_channel, std_per_channel, model_type, soft_substrate_masking, use_bops_substrate)
 
 
 if __name__ == '__main__':
