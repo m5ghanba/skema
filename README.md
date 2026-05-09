@@ -376,7 +376,7 @@ SKeMa supports a few model types, selectable via the --model-type flag::
 
 If `--model-type` is not specified, the tool defaults to `model_s2bandsandindices_only`.
 
-> ⚠️ **Stati File**
+> ⚠️ **Static Files**
 >
 > As noted above, model_full and model_ensemble require additional static files. These files must be downloaded and placed in the appropriate folder within the SKeMa installation directory. Detailed instructions are provided in [Static Files](#️-static-files) Section. In practice, the default model (model_s2bandsandindices_only) achieves accuracy that is often comparable to model_full and model_ensemble. Therefore, it is recommended when minimizing computation time and resource usage is important. 
 
