@@ -368,21 +368,25 @@ The mosaic is reprojected to BC Albers (EPSG:3005) at 10 m resolution (this is i
 
 SKeMa supports a few model types, selectable via the --model-type flag::
 
-1. **`model_full`** (default): Uses all available data including Sentinel-2 bands, bathymetry, and substrate information. This model provides the most accurate predictions but requires bathymetry and substrate static files.
+1. **`model_s2bandsandindices_only`** (default): Uses only Sentinel-2 bands and derived spectral indices. This model does not require bathymetry or substrate files, making it suitable for areas outside British Columbia or when these static files are unavailable. 
 
-2. **`model_s2bandsandindices_only`**: Uses only Sentinel-2 bands and derived spectral indices. This model does not require bathymetry or substrate files, making it suitable for areas outside British Columbia or when static files are unavailable.
+2. **`model_full`**: Uses Sentinel-2 bands, as well as bathymetry, and substrate information. 
 
-3. **`model_ensemble`**: An ensemble model that combines predictions from both `model_full` and `model_s2bandsandindices_only` by averaging their outputs. This model requires the same static files as `model_full` (bathymetry, slope, substrate) and can provide more robust predictions by leveraging both modeling approaches.
+3. **`model_ensemble`**: An ensemble model that combines predictions from both `model_full` and `model_s2bandsandindices_only` by averaging their outputs. This model requires the same static files as `model_full` (bathymetry and substrate) and can provide more robust predictions by leveraging both modeling approaches.
 
 If `--model-type` is not specified, the tool defaults to `model_s2bandsandindices_only`.
 
+> ⚠️ **Stati File**
+>
+> As noted above, model_full and model_ensemble require additional static files. These files must be downloaded and placed in the appropriate folder within the SKeMa installation directory. Detailed instructions are provided in [Static Files](#️-static-files) Section. In practice, the default model (model_s2bandsandindices_only) achieves accuracy that is often comparable to model_full and model_ensemble. Therefore, it is recommended when minimizing computation time and resource usage is important. 
+
 ### Optional Flags
 
-`--use-bops-substrate` (model_full and model_ensemble only): By default, model_full and model_ensemble use a substrate layer derived from a Random Forest (RF) model. When --use-bops-substrate is set, SKeMa instead uses substrate layers from the Bottom Patches (BoPs) dataset. Each substrate source has its own trained model weights, which are downloaded automatically. This flag cannot be used with model_s2bandsandindices_only.
+`--use-bops-substrate`: By default, model_full and model_ensemble use a substrate layer derived from a Random Forest (RF) model. When --use-bops-substrate is set, SKeMa instead uses substrate layers from the Bottom Patches (BoPs) dataset. Each substrate source has its own trained model weights, which are downloaded automatically. 
 
-`--soft-substrate-masking` *(model_full and model_ensemble only)*: When set, kelp pixels that overlap with sandy or muddy substrate classes are reclassified to 0 (no kelp). Use this with care — depending on substrate data quality in your area, it may remove a notable number of true kelp pixels.
+`--soft-substrate-masking`: When set, kelp pixels that overlap with sandy or muddy substrate classes are reclassified to 0 (no kelp). Use this with care - depending on substrate data quality in your area, it may remove a notable number of true kelp pixels significantly increasing omission error while providing only a modest reduction in commission error.
 
-`--eelgrass-masking` *(all model types)*: When set, kelp pixels that fall within eelgrass polygons from the [BC Marine Conservation Analysis (BCMCA) eelgrass dataset](https://bcmca.ca/data/eco_vascplants_eelgrass_polygons/) are reclassified to 0 (no kelp). Eelgrass (*Zostera marina*) is a marine vascular plant that provides important habitat — kelp predictions overlapping with it are likely false positives. This flag is specific to British Columbia. It can be combined with `--soft-substrate-masking`.
+`--eelgrass-masking`: When set, kelp pixels that fall within eelgrass polygons from the [BC Marine Conservation Analysis (BCMCA) eelgrass dataset](https://bcmca.ca/data/eco_vascplants_eelgrass_polygons/) are reclassified to 0 (no kelp). Eelgrass (*Zostera marina*) is a marine vascular plant that provides important habitat. Kelp predictions overlapping with it are likely false positives. This flag is specific to British Columbia. It can be combined with `--soft-substrate-masking`.
 
 When either or both masking flags are set, a single combined `_masked.tif` output is produced (rather than separate files per flag). In batch mode, a `mosaic_kelp_map_masked.tif` is also created.
 
@@ -403,14 +407,14 @@ skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif -
 # Ensemble model with BoPs substrate
 skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_ensemble --use-bops-substrate
 
-# Full model with soft substrate masking (produces a combined _masked.tif output)
-skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_full --soft-substrate-masking
+# Soft substrate masking (produces a combined _masked.tif output - requires static files)
+skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --soft-substrate-masking
 
 # Apply eelgrass masking (works with any model type)
 skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --eelgrass-masking
 
-# Combine both masking filters (single combined _masked.tif output)
-skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_full --soft-substrate-masking --eelgrass-masking
+# Combine both masking filters (single combined _masked.tif output - requires static files))
+skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --soft-substrate-masking --eelgrass-masking
 
 # Batch mode with ensemble model and BoPs substrate
 skema --input-dir "path/to/folder/with/safe/files/" --output-filename output.tif --batch-dir --model-type model_ensemble --use-bops-substrate
@@ -444,8 +448,6 @@ In addition to the per-scene output folders described above (with `<SAFE_name>_o
 - **`mosaic_kelp_map.tif`**: a single binary GeoTIFF mosaic merging all scene predictions, in BC Albers projection (EPSG:3005) at 10 m resolution.
 
 - **`mosaic_kelp_map_masked.tif`** *(only when `--soft-substrate-masking` and/or `--eelgrass-masking` are set)*: a combined masked mosaic built from the per-scene `_masked.tif` files, in BC Albers projection (EPSG:3005) at 10 m resolution.
----
-
 ---
 
 ## 🗂️ Static Files
