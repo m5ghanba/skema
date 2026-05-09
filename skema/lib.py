@@ -294,6 +294,78 @@ def apply_depth_mask(predictions, metadata):
 
 
 
+def _load_eelgrass_polygons():
+    """Load eelgrass polygons shipped with the package."""
+    try:
+        path = str(
+            files("skema.static.masks").joinpath(
+                "BCMCA_ECO_VascPlants_Eelgrass_Polygons_DATA.shp"
+            )
+        )
+        gdf = gpd.read_file(path)
+        if gdf.crs is None or gdf.empty:
+            print("[WARNING] Eelgrass shapefile loaded but is empty or has no CRS.")
+            return None
+        return gdf
+    except Exception as e:
+        print(f"[WARNING] Could not load eelgrass polygons: {e}")
+        return None
+
+
+_EELGRASS_GDF = _load_eelgrass_polygons()
+
+
+def apply_eelgrass_mask(predictions, scene_crs, img_transform, pred_shape):
+    """
+    Zero out predicted kelp pixels that overlap eelgrass polygons.
+
+    Parameters
+    ----------
+    predictions : np.ndarray
+        2D prediction array where kelp == 1.
+    scene_crs : rasterio CRS or compatible
+        CRS of the prediction raster.
+    img_transform : affine.Affine
+        Affine transform of the prediction raster.
+    pred_shape : tuple
+        (height, width) of prediction raster.
+
+    Returns
+    -------
+    np.ndarray
+        Masked predictions.
+    """
+    if _EELGRASS_GDF is None:
+        return predictions
+
+    height, width = pred_shape
+
+    # Reproject eelgrass polygons to prediction CRS
+    try:
+        eelgrass_gdf = _EELGRASS_GDF.to_crs(scene_crs)
+    except Exception as e:
+        print(f"[WARNING] Failed to reproject eelgrass polygons: {e}")
+        return predictions
+
+    if eelgrass_gdf.empty:
+        return predictions
+
+    # Rasterize eelgrass polygons
+    eelgrass_mask = rasterize(
+        [(geom, 1) for geom in eelgrass_gdf.geometry],
+        out_shape=(height, width),
+        transform=img_transform,
+        fill=0,
+        dtype=np.uint8,
+        all_touched=False,
+    )
+
+    # Remove kelp predictions inside eelgrass polygons
+    predictions[(predictions == 1) & (eelgrass_mask == 1)] = 0
+
+    return predictions
+
+
 def extract_bands_to_geotiffs(safe_dir, output_dir):
     """
     Extracts and stacks Sentinel-2 bands from .SAFE format into multi-band GeoTIFF files, 
@@ -732,7 +804,7 @@ def apply_fill_nodata_single(safe_output_dir, fill_value_subs=0, fill_value_bath
     return subs_file, bathy_file, slope_file
 
 
-def create_mosaic(tif_paths, output_path, target_resolution_meters=10, soft_substrate_masking=False):
+def create_mosaic(tif_paths, output_path, target_resolution_meters=10, soft_substrate_masking=False, eelgrass_masking=False):
     """
     Create a maximum-value mosaic from a list of kelp prediction GeoTIFFs,
     reprojected to BC Albers (EPSG:3005) at a fixed resolution.
@@ -744,8 +816,10 @@ def create_mosaic(tif_paths, output_path, target_resolution_meters=10, soft_subs
         tif_paths (list[str]): Paths to the per-scene prediction TIFFs.
         output_path (str): Where to save mosaic_kelp_map.tif.
         target_resolution_meters (float): Output pixel size in metres (default 10).
-        soft_substrate_masking (bool): if True, also creates a mosaic from the
-            substrate-masked per-scene TIFFs, saved as mosaic_kelp_map_substrate_masked.tif.
+        soft_substrate_masking (bool): if True, include soft substrate masking in the combined masked mosaic.
+        eelgrass_masking (bool): if True, include eelgrass masking in the combined masked mosaic.
+            When either or both flags are set, a mosaic_kelp_map_masked.tif is created
+            from the per-scene _masked.tif files.
     """
 
     console = Console()
@@ -829,21 +903,21 @@ def create_mosaic(tif_paths, output_path, target_resolution_meters=10, soft_subs
 
     console.print(f"[green]✓[/green] Mosaic saved to [bold]{output_path}[/bold].")
 
-    # ── Soft substrate masking mosaic (optional second mosaic output) ─────
-    if soft_substrate_masking:
+    # ── Masked mosaic (soft substrate and/or eelgrass) ───────────────────
+    if soft_substrate_masking or eelgrass_masking:
         stem = os.path.splitext(os.path.basename(output_path))[0]
         masked_dir = os.path.dirname(output_path)
         masked_tif_paths = []
         for p in valid_paths:
             scene_stem = os.path.splitext(os.path.basename(p))[0]
-            masked_candidate = os.path.join(os.path.dirname(p), f"{scene_stem}_substrate_masked.tif")
+            masked_candidate = os.path.join(os.path.dirname(p), f"{scene_stem}_masked.tif")
             if os.path.exists(masked_candidate):
                 masked_tif_paths.append(masked_candidate)
             else:
-                console.print(f"[yellow]Warning: substrate-masked file not found for {os.path.basename(p)}, skipping in masked mosaic.[/yellow]")
+                console.print(f"[yellow]Warning: masked file not found for {os.path.basename(p)}, skipping in masked mosaic.[/yellow]")
         if masked_tif_paths:
-            masked_mosaic_path = os.path.join(masked_dir, f"{stem}_substrate_masked.tif")
-            console.print(f"[cyan]Building substrate-masked mosaic from {len(masked_tif_paths)} scene(s)...[/cyan]")
+            masked_mosaic_path = os.path.join(masked_dir, f"{stem}_masked.tif")
+            console.print(f"[cyan]Building masked mosaic from {len(masked_tif_paths)} scene(s)...[/cyan]")
             masked_mosaic = np.zeros((height, width), dtype=np.uint8)
             for p in masked_tif_paths:
                 with rasterio.open(p) as src:
@@ -868,9 +942,9 @@ def create_mosaic(tif_paths, output_path, target_resolution_meters=10, soft_subs
                 compress="lzw",
             ) as dst:
                 dst.write(masked_mosaic, 1)
-            console.print(f"[green]✓[/green] Substrate-masked mosaic saved to [bold]{masked_mosaic_path}[/bold].")
+            console.print(f"[green]✓[/green] Masked mosaic saved to [bold]{masked_mosaic_path}[/bold].")
         else:
-            console.print("[yellow]No substrate-masked scene files found; masked mosaic skipped.[/yellow]")
+            console.print("[yellow]No masked scene files found; masked mosaic skipped.[/yellow]")
 
 
 def normalize_input_mean_std(image_hwc, mean_per_channel, std_per_channel, epsilon=1e-8):
@@ -1912,9 +1986,7 @@ class DatasetInference(SatelliteDataset):
         # Save the file with rasterio, ensuring that spatial metadata is preserved
         with rasterio.open(output_path, 'w', **updated_metadata) as dst:
             dst.write(predictions, 1)  # Write data to the first band
-        
-        
-        console.print(f"[green]✓[/green] Kelp classification map saved to [bold]{output_path}[bold].")
+
 
 # Set the main directory
 # main_directory = r"C:\Alena\results\20220806T191919_20220806T192707_T09UXQ"
@@ -1935,7 +2007,7 @@ class DatasetInference(SatelliteDataset):
 # dataset.save_output(predictions, output_path)
 
 
-def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model_type='model_full', soft_substrate_masking=False, use_bops_substrate=False): 
+def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model_type='model_full', soft_substrate_masking=False, use_bops_substrate=False, eelgrass_masking=False): 
     """
     Perform semantic segmentation inference on a Sentinel-2 scene.
     
@@ -1944,10 +2016,13 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
     - output_filename: output TIFF filename to save prediction
     - mean_per_channel, std_per_channel: normalization stats used during training
     - model_type: 'model_full' (with substrate/bathymetry) or 'model_s2bandsandindices_only'
-    - soft_substrate_masking: if True, also saves a substrate-masked prediction where kelp
-      pixels overlapping substrate classes 3 or 4 are set to 0 (no kelp).
+    - soft_substrate_masking: if True, zero out kelp pixels on substrate classes 3 or 4
+      (sandy/muddy) in a combined _masked.tif output.
     - use_bops_substrate: if True, use BoPs substrate files and the BoPs-trained model weights;
       if False (default), use RF substrate files and RF-trained model weights.
+    - eelgrass_masking: if True, zero out kelp pixels within eelgrass polygons
+      (BCMCA eelgrass shapefile) in a combined _masked.tif output.
+      Compatible with all model types. Both flags can be combined.
     """
     
     # Load appropriate model
@@ -1972,8 +2047,15 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
             if not b2348_file:
                 raise RuntimeError(f"Failed to extract bands for {input_dir}")
 
-        # Steps 2-4: Only for model_full and model_ensemble (skip if bathymetry, substrate, and slope already exist)
-        if model_type == 'model_full' or model_type == 'model_ensemble':
+        # Steps 2-4: Only for model_full and model_ensemble or soft_substrate_masking is True
+        if model_type == 'model_full' or model_type == 'model_ensemble' or soft_substrate_masking:
+            if (soft_substrate_masking and model_type not in ["model_full", "model_ensemble"]):
+                console = Console()
+                console.print(
+                    "[yellow]Note:[/yellow] Soft substrate masking requires deriving "
+                    "bathymetry, substrate, and slope layers, even though only the "
+                    "substrate layer is ultimately used for masking."
+                )
             # Substrate source is set explicitly by the caller via use_bops_substrate
             if use_bops_substrate:
                 # BoPs substrate: 4 files at 10m
@@ -2051,21 +2133,35 @@ def segment(input_dir, output_filename, mean_per_channel, std_per_channel, model
     predictions = dataset.run_model_on_tiles(batch_size=8) # not weighted option for stiching the tiles: run_model_on_tiles_not_weighted(batch_size=8)
     output_path = os.path.join(input_dir, output_filename)
     dataset.save_output(predictions, output_path)
+    console.print(f"[green]✓[/green] Kelp classification map saved to [bold]{output_path}[bold].")
 
-        # ── Soft substrate masking (optional second output) ────────────────────────
-    if soft_substrate_masking:
+    # ── Optional masking: soft substrate and/or eelgrass (single combined _masked.tif output) ──
+    if soft_substrate_masking or eelgrass_masking:
         console = Console()
-        # Locate the merged substrate file for this scene
-        subs_candidates = [f for f in os.listdir(input_dir) if f.endswith('_Substrate.tif')]
-        if not subs_candidates:
-            console.print('[yellow]Warning: _Substrate.tif not found in output folder; substrate-masked output skipped.[/yellow]')
-        else:
-            subs_path = os.path.join(input_dir, subs_candidates[0])
-            with rasterio.open(subs_path) as subs_src:
-                substrate = subs_src.read(1)
-            masked_predictions = predictions.copy()
-            masked_predictions[(predictions == 1) & ((substrate == 3) | (substrate == 4))] = 0
-            stem = output_filename[:-4] if output_filename.lower().endswith('.tif') else output_filename
-            masked_output_path = os.path.join(input_dir, f'{stem}_substrate_masked.tif')
-            dataset.save_output(masked_predictions, masked_output_path)
-            console.print(f'[green]✓[/green] Substrate-masked kelp map saved to [bold]{masked_output_path}[bold].')
+        masked_predictions = predictions.copy()
+
+        # Apply soft substrate mask (zero kelp on substrate classes 3 or 4)
+        if soft_substrate_masking:
+            subs_candidates = [f for f in os.listdir(input_dir) if f.endswith('_Substrate.tif')]
+            if not subs_candidates:
+                console.print('[yellow]Warning: _Substrate.tif not found; soft substrate masking skipped.[/yellow]')
+            else:
+                subs_path = os.path.join(input_dir, subs_candidates[0])
+                with rasterio.open(subs_path) as subs_src:
+                    substrate = subs_src.read(1)
+                masked_predictions[(masked_predictions == 1) & ((substrate == 3) | (substrate == 4))] = 0
+
+        # Apply eelgrass mask (zero kelp within eelgrass polygons)
+        if eelgrass_masking:
+            with rasterio.open(output_path) as pred_src:
+                pred_crs = pred_src.crs
+                pred_transform = pred_src.transform
+                pred_shape = (pred_src.height, pred_src.width)
+            masked_predictions = apply_eelgrass_mask(
+                masked_predictions, pred_crs, pred_transform, pred_shape
+            )
+
+        stem = output_filename[:-4] if output_filename.lower().endswith('.tif') else output_filename
+        masked_output_path = os.path.join(input_dir, f'{stem}_masked.tif')
+        dataset.save_output(masked_predictions, masked_output_path)
+        console.print(f'[green]✓[/green] Masked kelp map saved to [bold]{masked_output_path}[/bold].')

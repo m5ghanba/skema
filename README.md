@@ -20,14 +20,14 @@
 - [Installation](#-installation)
   - [Step 1: Install Python](#step-1-install-python)
   - [Step 2: Install SKeMa](#step-2-install-skema)
-  - [Static Files](#static-files)
-  - [GPU Support](#gpu-support)
 - [Usage](#️-usage)
   - [Activating the Virtual Environment](#activating-the-virtual-environment)
   - [Downloading Sentinel-2 Images](#downloading-sentinel-2-images)
   - [Running SKeMa](#running-skema)
   - [Model Types](#model-types)
   - [Output Files](#output-files)
+- [Static Files](#️-static-files)
+- [GPU Support](#️-gpu-support)
 - [Project Structure](#️-project-structure)
 - [License](#-license)
 
@@ -90,31 +90,17 @@ python3 --version
 If the version shown is between 3.8 and 3.12 (e.g., Python 3.9.13, Python 3.11.5, Python 3.12.7), you already meet the requirement and can skip the installation steps below. Otherwise, follow the instructions below to install Python.
 
 #### On Windows
-1. **Check if Winget is available** (it's built into Windows 10 version 2009 or later, or Windows 11, and most modern systems have it):
-   - Open PowerShell or Command Prompt.
-   - Type `winget --version` and press Enter.
-   - If it shows a version number (e.g., "v1.8.0"), proceed. If not (error like "winget is not recognized"), download the App Installer from the Microsoft Store (search for "App Installer") or update Windows via Settings > Update & Security > Windows Update.
+1. **Download the Python 3.12.7 installer** directly from the Python website:
+   - [https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe](https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe)
 
-2. **Install Python 3.12.7** (the most reliable and stable subversion of Python 3.12):
-   - In your terminal, run:
-     ```
-     winget install -e --id Python.Python.3.12
-     ```
-   - This downloads and installs Python automatically. It may take a few minutes.
-   - **Important**: During installation (if prompted), ensure "Add Python to PATH" is selected (it usually is by default with winget).
-   - Restart your terminal after installation.
-   - Verify: 
-      - Run `python --version`. It should output something like "Python 3.12.7". If not, close and reopen the terminal, or manually add Python to PATH (search online for "add Python to PATH Windows").
-      - ⚠️ Note: You may need to run Command Prompt (not Windows PowerShell) and open it normally (not as Administrator) because PowerShell and elevated terminals can handle PATH variables differently, which may prevent Python from being recognized.
+2. **Run the installer**:
+   - **IMPORTANT**: At the very first screen, check the box that says **"Add Python to PATH"**. This option is **unchecked by default** — if you miss it, Python will not be recognised by your terminal.
+   - Click "Install Now" and follow the prompts.
 
-   *Alternative if winget fails*: Download the installer directly from the Python website:
-   - For Python 3.12.7: [https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe](https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe)
-   - Run the downloaded installer.
-   - **IMPORTANT**: During installation, make sure to check the box that says **"Add Python to PATH"** at the beginning of the installation process. This option is **unchecked by default**, so you must manually select it.
-   - Follow the GUI prompts to complete the installation.
-   - Verify: 
-      - Run `python --version` in a new terminal window. It should output "Python 3.12.7".
-      - ⚠️ Note: You may need to run Command Prompt (not Windows PowerShell) and open it normally (not as Administrator) because PowerShell and elevated terminals can handle PATH variables differently, which may prevent Python from being recognized.
+3. **Verify the installation**:
+   - Open **Command Prompt** (search for `cmd` in the Start menu). Use Command Prompt, not PowerShell, as PowerShell can sometimes fail to recognise Python even if it is installed.
+   - Run `python --version`. It should output `Python 3.12.7`.
+   - If you see an error, close and reopen Command Prompt and try again. If it still fails, search online for "add Python to PATH Windows".
 
 #### On macOS
 1. **Install Homebrew** (a package manager for CLI installations, if you don't have it):
@@ -197,9 +183,18 @@ source skema_env/bin/activate
 # Install SKeMa
 pip install skema-kelp
 ```
+> ⚠️ **Windows only — "Access Denied" when activating the environment**
+>
+> This is caused by PowerShell's execution policy, which blocks scripts from running by default on many Windows systems. Fix it by running this command **once** in PowerShell:
+> ```
+> Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+> ```
+> Type `Y` and press Enter when prompted. This only affects your own user account and does not change system-wide security settings. After running it, try activating the environment again.
 
-⚠️ Note for macOS users:
-In some cases, the installation may fail while building the opencv-python-headless dependency (a computer vision library required by albumentations). If you see an error mentioning OpenCV or "Failed building wheel for opencv-python-headless", install OpenCV separately first and then install SKeMa again:
+> ⏳ **Installation Time**: The installation may take up to **10 minutes** to complete. A large amount of text will scroll past — this is normal. You will know it is finished when you see a line like `Successfully installed skema-kelp-X.X.X` and your command prompt reappears.
+
+> ⚠️ **Opencv issue for macOS users**:
+> In some cases, the installation may fail while building the opencv-python-headless dependency (a computer vision library required by albumentations). If you see an error mentioning OpenCV or "Failed building wheel for opencv-python-headless", install OpenCV separately first and then install SKeMa again:
 
 ```bash
 pip install opencv-python-headless==4.9.0.80
@@ -244,92 +239,6 @@ If you encounter packaging errors, make sure your pip and build tools are up to 
 ```bash
 pip install --upgrade pip setuptools wheel
 ```
-
-### Static files  
-There are necessary **static files** that need to be manually downloaded and placed inside the corresponding directory as described below. These are bathymetry and substrate files from the whole coast of British Columbia that `skema` uses when predicting kelp on a Sentinel-2 image.  
-
-#### Bathymetry File
-- The bathymetry file is a single TIFF raster (`Bathymetry.tif`).
-
-#### Slope File
-- The slope file is a single TIFF raster (`Slope.tif`), derived from the bathymetry data.
-
-#### Substrate Files
-SKeMa uses two substrate data sources:
- 
-**1. Regional Substrate Files (20m resolution) - For most BC coastal areas:**
-- Five TIFF rasters: `NCC_substrate_20m.tif`, `SOG_substrate_20m.tif`, `WCVI_substrate_20m.tif`, `QCS_substrate_20m.tif`, `HG_substrate_20m.tif`
-- Each covers a different region of the BC coast
- 
-**2. BoPs Substrate Files (shapefiles origianlly, rasterized to 10m resolution):**
-- Four TIFF rasters: `BoPs_HG_10m.tif`, `BoPs_NCC_10m.tif`, `BoPs_QCSSOG_10m.tif`, `BoPs_WCVI_10m.tif`
-- Nearshore Bottom Patches dataset
-- **These files must be rasterized from shapefiles** - see instructions below
-
-When SKeMa is installed via `pip`, there is a folder named `bathy_substrate` located in the following directory. Place all bathymetry and substrate files inside this folder:
-
-On Windows:
-```
-skema_env\Lib\site-packages\skema\static\bathy_substrate
-```
-On macOS/Linux:
-```
-skema_env/lib/python3.11/site-packages/skema/static/bathy_substrate/
-```
-(Adjust the Python version number and virtual-environment name as appropriate for your system.)
-
-**⚠️ Note**: Static files (bathymetry and substrate) are only required when using the **full model** (`--model-type model_full`). If you plan to use only the **S2-only model** (`--model-type model_s2bandsandindices_only`), you can skip downloading these files.
-
-If you installed `skema` by cloning the **GitHub repository** instead of using `pip`, please place the downloaded files inside:
-```
-skema/static/bathy_substrate/
-```
-
-**Sources**:  
-- Canada's DEM/bathymetry model (10m resolution):  
-  - Documentation: https://publications.gc.ca/collections/collection_2023/rncan-nrcan/m183-2/M183-2-8963-eng.pdf  
-  - Dataset: https://maps-cartes.services.geo.ca/server_serveur/rest/services/NRCan/canada_west_coast_DEM_en/MapServer  
-
-- Shallow substrate model (20m) of the Pacific Canadian coast (Haggarty et al., 2020):  
-  https://osdp-psdo.canada.ca/dp/en/search/metadata/NRCAN-FGP-1-b100cf6c-7818-4748-9960-9eab2aa6a7a0  
-
-- Nearshore Bottom Patches (BoPs) substrate model:
-  - Full dataset & regional shapefile downloads: https://open.canada.ca/data/en/dataset/6cda0f8d-110e-423d-8d7a-bf8a40eaa26e
-  - Report (English): https://publications.gc.ca/collections/collection_2022/mpo-dfo/Fs97-6-3472-eng.pdf
-  - Report (French): https://waves-vagues.dfo-mpo.gc.ca/Library/41056164.pdf
-  
-  **⚠️ Important**: The BoPs substrate files are provided as shapefiles and must be rasterized before use:
-  1. Download the four regional shapefiles: `BoPs_HG.shp`, `BoPs_NCC.shp`, `BoPs_QCSSOG.shp`, `BoPs_WCVI.shp`
-  2. Use the provided Jupyter notebook (`notebooks/rasterizeNearshoreBottomPatches_BoPs.ipynb`) to convert each shapefile to a GeoTIFF at 10m resolution
-  3. The notebook will rasterize the `BType1` field (1=hard, 2=mixed, 3=soft substrate)
-  4. Place the resulting `BoPs_*_10m.tif` files in the `bathy_substrate` folder alongside the other static files
-
-If you encounter any issues downloading these files, please don't hesitate to contact us for assistance.
-
-
-### GPU support  
-
-For GPU users, install CUDA-supported PyTorch that matches your CUDA Toolkit. Check your CUDA version with:  
-
-```bash  
-nvcc --version  
-```
-
-For CUDA 12.1:  
-
-```bash  
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121  
-```
-
-For CUDA 11.8:  
-
-```bash  
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118  
-```
-
-This will install the latest compatible versions of PyTorch, torchvision, and torchaudio for your CUDA version.
-
-Skip this step if you don't have a GPU.
 
 ---
 
@@ -471,7 +380,11 @@ If `--model-type` is not specified, the tool defaults to `model_s2bandsandindice
 
 `--use-bops-substrate` (model_full and model_ensemble only): By default, model_full and model_ensemble use a substrate layer derived from a Random Forest (RF) model. When --use-bops-substrate is set, SKeMa instead uses substrate layers from the Bottom Patches (BoPs) dataset. Each substrate source has its own trained model weights, which are downloaded automatically. This flag cannot be used with model_s2bandsandindices_only.
 
-`--soft-substrate-masking` (model_full and model_ensemble only): When set, SKeMa produces a second output alongside the normal prediction. Any pixel predicted as kelp that overlaps with sandy or muddy substrate classes is reclassified to 0 (no kelp). Use this with care — depending on substrate data quality in your area, it may remove a notable number of true kelp pixels. In batch mode, a second substrate-masked mosaic is also created.
+`--soft-substrate-masking` *(model_full and model_ensemble only)*: When set, kelp pixels that overlap with sandy or muddy substrate classes are reclassified to 0 (no kelp). Use this with care — depending on substrate data quality in your area, it may remove a notable number of true kelp pixels.
+
+`--eelgrass-masking` *(all model types)*: When set, kelp pixels that fall within eelgrass polygons from the [BC Marine Conservation Analysis (BCMCA) eelgrass dataset](https://bcmca.ca/data/eco_vascplants_eelgrass_polygons/) are reclassified to 0 (no kelp). Eelgrass (*Zostera marina*) is a marine vascular plant that provides important habitat — kelp predictions overlapping with it are likely false positives. This flag is specific to British Columbia. It can be combined with `--soft-substrate-masking`.
+
+When either or both masking flags are set, a single combined `_masked.tif` output is produced (rather than separate files per flag). In batch mode, a `mosaic_kelp_map_masked.tif` is also created.
 
 ### Usage Examples
 
@@ -490,8 +403,14 @@ skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif -
 # Ensemble model with BoPs substrate
 skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_ensemble --use-bops-substrate
 
-# Full model with soft substrate masking (produces a second masked output)
+# Full model with soft substrate masking (produces a combined _masked.tif output)
 skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_full --soft-substrate-masking
+
+# Apply eelgrass masking (works with any model type)
+skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --eelgrass-masking
+
+# Combine both masking filters (single combined _masked.tif output)
+skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --model-type model_full --soft-substrate-masking --eelgrass-masking
 
 # Batch mode with ensemble model and BoPs substrate
 skema --input-dir "path/to/folder/with/safe/files/" --output-filename output.tif --batch-dir --model-type model_ensemble --use-bops-substrate
@@ -515,7 +434,7 @@ After running, the tool generates a folder with the same name as the `.SAFE` fil
 4. **`<SAFE_name>_Substrate.tif`**: substrate classification data aligned and warped to the Sentinel-2 pixel grid.  
 5. **`<SAFE_name>_Slope.tif`**: slope data (derived from bathymetry) aligned and warped to the Sentinel-2 pixel grid.  
 6. **`output.tif`** (or the filename you specify): a **binary GeoTIFF**, where kelp is labeled as `1` and non-kelp as `0`.  
-7. **`output_substrate_masked.tif`** (only when --soft-substrate-masking is set): a second binary GeoTIFF where kelp pixels overlapping sandy or muddy substrate classes are set to 0.
+7. **`output_masked.tif`** *(only when `--soft-substrate-masking` and/or `--eelgrass-masking` are set)*: a single combined binary GeoTIFF with all selected masks applied. Kelp pixels on sandy/muddy substrate and/or within eelgrass polygons are set to 0.
 
 
 #### Batch Mode
@@ -524,7 +443,85 @@ In addition to the per-scene output folders described above (with `<SAFE_name>_o
 
 - **`mosaic_kelp_map.tif`**: a single binary GeoTIFF mosaic merging all scene predictions, in BC Albers projection (EPSG:3005) at 10 m resolution.
 
-- **`mosaic_kelp_map_substrate_masked.tif`**: (only when --soft-substrate-masking is set): a second mosaic built from the per-scene substrate-masked predictions, in BC Albers projection (EPSG:3005) at 10 m resolution.
+- **`mosaic_kelp_map_masked.tif`** *(only when `--soft-substrate-masking` and/or `--eelgrass-masking` are set)*: a combined masked mosaic built from the per-scene `_masked.tif` files, in BC Albers projection (EPSG:3005) at 10 m resolution.
+---
+
+---
+
+## 🗂️ Static Files
+
+> **These files are only required when using `model_full` or `model_ensemble`.** If you are using the default `model_s2bandsandindices_only`, you can skip this section entirely.
+
+Static files are bathymetry and substrate rasters for the British Columbia coast that SKeMa uses as additional input channels when predicting kelp.
+
+### Bathymetry and Slope Files
+- `Bathymetry.tif` — a single TIFF raster of seafloor depth.
+- `Slope.tif` — a single TIFF raster derived from the bathymetry data.
+
+### Substrate Files
+SKeMa supports two substrate sources, selected via `--use-bops-substrate`:
+
+**1. Regional RF substrate files (20 m resolution) — default:**
+- Five TIFF rasters: `NCC_substrate_20m.tif`, `SOG_substrate_20m.tif`, `WCVI_substrate_20m.tif`, `QCS_substrate_20m.tif`, `HG_substrate_20m.tif`
+- Each covers a different region of the BC coast.
+
+**2. BoPs substrate files (10 m resolution) — with `--use-bops-substrate`:**
+- Four TIFF rasters: `BoPs_HG_10m.tif`, `BoPs_NCC_10m.tif`, `BoPs_QCSSOG_10m.tif`, `BoPs_WCVI_10m.tif`
+- Must be rasterized from shapefiles using the provided notebook `notebooks/rasterizeNearshoreBottomPatches_BoPs.ipynb`.
+
+### Where to place static files
+
+Place all files in the `bathy_substrate` folder inside the SKeMa package:
+
+**Windows (pip install):**
+```
+skema_env\Lib\site-packages\skema\static\bathy_substrate
+```
+**macOS/Linux (pip install):**
+```
+skema_env/lib/python3.12/site-packages/skema/static/bathy_substrate/
+```
+**Cloned from GitHub:**
+```
+skema/static/bathy_substrate/
+```
+
+If you encounter any issues downloading or placing these files, please contact us for assistance.
+
+### Sources
+- **Bathymetry** — Canadian Hydrographic Service (CHS), 20 m resolution:
+  - Documentation: https://publications.gc.ca/collections/collection_2019/mpo-dfo/Fs97-6-3321-eng.pdf
+  - Dataset: https://www.gis-hub.ca/dataset/bathy_20m
+
+- **RF Substrate** — Shallow substrate model (20 m) of the Pacific Canadian coast (Haggarty et al., 2020):
+  https://osdp-psdo.canada.ca/dp/en/search/metadata/NRCAN-FGP-1-b100cf6c-7818-4748-9960-9eab2aa6a7a0
+
+- **BoPs Substrate** — Nearshore Bottom Patches:
+  - Full dataset: https://open.canada.ca/data/en/dataset/6cda0f8d-110e-423d-8d7a-bf8a40eaa26e
+  - Report (English): https://publications.gc.ca/collections/collection_2022/mpo-dfo/Fs97-6-3472-eng.pdf
+
+---
+
+## 🖥️ GPU Support
+
+> **Most users will not need this section.** SKeMa runs on CPU by default and works well without a GPU. GPU support is optional and only relevant if you have an NVIDIA GPU and want faster inference.
+
+Check your CUDA version:
+```bash
+nvcc --version
+```
+
+Then install the matching PyTorch build:
+
+For CUDA 12.1:
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+```
+For CUDA 11.8:
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
 ---
 
 ## ⚙️ Project Structure
@@ -538,6 +535,11 @@ skema/
 │   │  
 │   └── static/  
 │       ├── __init__.py  
+│       │  
+│       ├── masks/  
+│       │   ├── valid_depth_zone.gpkg  
+│       │   ├── BCMCA_ECO_VascPlants_Eelgrass_Polygons_DATA.shp  
+│       │   └── (associated .dbf, .shx, .prj, .sbn, .sbx files)  
 │       │  
 │       └── bathy_substrate/  
 │           ├── __init__.py  

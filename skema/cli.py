@@ -28,7 +28,11 @@ from skema.lib import segment, create_mosaic
               help='When set, use BoPs substrate files and the BoPs-trained model weights. '
                    'When not set (default), RF substrate files and RF-trained model weights are used. '
                    'Only valid for model_full and model_ensemble.')
-def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_masking, use_bops_substrate):
+@click.option('--eelgrass-masking', is_flag=True, default=False,
+              help='When set, kelp pixels that fall within eelgrass polygons (BCMCA eelgrass dataset) '
+                   'are reclassified to 0 (no kelp) in a combined _masked.tif output. '
+                   'Valid for all model types. Can be combined with --soft-substrate-masking.')
+def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_masking, use_bops_substrate, eelgrass_masking):
     """Segment a Sentinel-2 scene and output a kelp mask.
 
     Single scene:
@@ -52,24 +56,25 @@ def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_maski
     device = "GPU" if torch.cuda.is_available() else "CPU"
     click.echo(f"Computing Device: {device}")
     click.echo(f"Soft Substrate Masking: {'Yes' if soft_substrate_masking else 'No'}")
-    click.echo(f"Substrate Source:       {'None' if model_type == 'model_s2bandsandindices_only' else ('BoPs' if use_bops_substrate else 'RF Model')}")
+    click.echo(f"Substrate Source:       {'None' if (model_type == 'model_s2bandsandindices_only' and not soft_substrate_masking) else ('BoPs' if use_bops_substrate else 'RF Model')}")
+    click.echo(f"Eelgrass Masking:       {'Yes' if eelgrass_masking else 'No'}")
     click.echo("="*60 + "\n")
 
-    # Validate --soft-substrate-masking is not used with band-only model
-    if soft_substrate_masking and model_type == 'model_s2bandsandindices_only':
-        raise click.UsageError(
-            "--soft-substrate-masking requires a substrate channel and cannot be used with "
-            "'model_s2bandsandindices_only'. "
-            "Please use --model-type model_full or --model-type model_ensemble."
-        )
+    # # Validate --soft-substrate-masking is not used with band-only model
+    # if soft_substrate_masking and model_type == 'model_s2bandsandindices_only':
+    #     raise click.UsageError(
+    #         "--soft-substrate-masking requires a substrate channel and cannot be used with "
+    #         "'model_s2bandsandindices_only'. "
+    #         "Please use --model-type model_full or --model-type model_ensemble."
+    #     )
 
-    # Validate --use-bops-substrate is not used with band-only model
-    if use_bops_substrate and model_type == 'model_s2bandsandindices_only':
-        raise click.UsageError(
-            "--use-bops-substrate requires a substrate channel and cannot be used with "
-            "'model_s2bandsandindices_only'. "
-            "Please use --model-type model_full or --model-type model_ensemble."
-        )
+    # # Validate --use-bops-substrate is not used with band-only model
+    # if use_bops_substrate and model_type == 'model_s2bandsandindices_only':
+    #     raise click.UsageError(
+    #         "--use-bops-substrate requires a substrate channel and cannot be used with "
+    #         "'model_s2bandsandindices_only'. "
+    #         "Please use --model-type model_full or --model-type model_ensemble."
+    #     )
 
     # Define the normalization stats based on model type and substrate source
     if model_type == 'model_full' or model_type == 'model_ensemble':
@@ -132,7 +137,7 @@ def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_maski
 
             click.echo(f"[{idx}/{len(safe_folders)}] Processing: {safe_basename}")
 
-            segment(safe_path, scene_output_filename, mean_per_channel, std_per_channel, model_type, soft_substrate_masking, use_bops_substrate)
+            segment(safe_path, scene_output_filename, mean_per_channel, std_per_channel, model_type, soft_substrate_masking, use_bops_substrate, eelgrass_masking)
 
             # The segment() function saves the result inside a folder named after the SAFE basename,
             # located next to the .SAFE file (i.e. inside input_dir).
@@ -145,7 +150,7 @@ def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_maski
         click.echo("="*60)
         click.echo("All scenes processed. Creating mosaic...")
         mosaic_path = os.path.join(input_dir, "mosaic_kelp_map.tif")
-        create_mosaic(processed_output_paths, mosaic_path, soft_substrate_masking=soft_substrate_masking)
+        create_mosaic(processed_output_paths, mosaic_path, soft_substrate_masking=soft_substrate_masking, eelgrass_masking=eelgrass_masking)
         click.echo("="*60 + "\n")
 
     # ------------------------------------------------------------------ #
@@ -161,7 +166,7 @@ def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_maski
             raise click.BadParameter(
                 f"The path '{input_dir}' does not exist or is not a directory."
             )
-        segment(input_dir, output_filename, mean_per_channel, std_per_channel, model_type, soft_substrate_masking, use_bops_substrate)
+        segment(input_dir, output_filename, mean_per_channel, std_per_channel, model_type, soft_substrate_masking, use_bops_substrate, eelgrass_masking)
 
 
 if __name__ == '__main__':
