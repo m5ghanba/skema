@@ -14,7 +14,6 @@ dist/
 *.egg-info/
 
 # Ignore personal folders
-notebooks/
 scripts/
 
 # OS-specific files

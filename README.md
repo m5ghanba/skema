@@ -25,6 +25,7 @@
   - [Downloading Sentinel-2 Images](#downloading-sentinel-2-images)
   - [Running SKeMa](#running-skema)
   - [Model Types](#model-types)
+  - [Opening and Visualizing Kelp Maps in QGIS](#opening-and-visualizing-kelp-maps-in-qgis)
   - [Output Files](#output-files)
 - [Static Files](#️-static-files)
 - [GPU Support](#️-gpu-support)
@@ -55,8 +56,8 @@ skema --help
 If you use **SKeMa** in your research or work, please cite:
 
 ```bibtex
-@software{skema_2025,
-  author       = {Mohsen Ghanbari, Neil Ernst, Taylor A. Denouden, Luba Y. Reshitnyk, Piper Steffen, Alena Wachmann, Alejandra Mora-Sotoa, Eduardo Loos, Margot Hessing-Lewis, Nic Dedeluke, Maycira Costa}, 
+@software{skema_2026,
+  author       = {Mohsen Ghanbari, Neil Ernst, Taylor A. Denouden, Luba Y. Reshitnyk, Piper Steffen, Alena Wachmann, Alejandra Mora-Soto, Eduardo Loos, Margot Hessing-Lewis, Nic Dedeluke, Maycira Costa}, 
   title        = {SKeMa: Satellite-based Kelp Mapping using Semantic Segmentation on Sentinel-2 imagery},
   year         = 2026,
   publisher    = {Hugging Face},
@@ -69,13 +70,13 @@ If you use **SKeMa** in your research or work, please cite:
 
 ##  Installation
 
-Before you can set up SKeMa, you'll need **Python** (version **3.8 to 3.12**) installed on your computer. Python is a free tool, and no accounts or sign-ups are required to install it. We'll install it using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps. In some cases, however, you may need to use Command Prompt instead of PowerShell because PowerShell can handle command resolution and PATH variables differently, which may prevent it from recognizing Python even if it is installed. Additionally, if Python was installed only for your user account (and not system-wide), it may only be accessible from a normal Command Prompt session rather than one opened as Administrator, since elevated terminals can use a different set of environment variables.
+Before you can set up SKeMa, you'll need **Python** (version **3.9 to 3.12**) installed on your computer. Python is a free tool, and no accounts or sign-ups are required to install it. We'll install it using your terminal (command line) where possible for simplicity. If you're on Windows, ensure you're using **PowerShell** or **Command Prompt** as Administrator (right-click and select "Run as administrator") for some steps. In some cases, however, you may need to use Command Prompt instead of PowerShell because PowerShell can handle command resolution and PATH variables differently, which may prevent it from recognizing Python even if it is installed. Additionally, if Python was installed only for your user account (and not system-wide), it may only be accessible from a normal Command Prompt session rather than one opened as Administrator, since elevated terminals can use a different set of environment variables.
 
 ### Step 1: Install Python
 
 **Checking Your Current Python Version:**
 
-Before proceeding, check if you already have Python between versions 3.8 and 3.12 on your computer.
+Before proceeding, check if you already have Python between versions 3.9 and 3.12 on your computer.
 Open a terminal (PowerShell, Command Prompt, or macOS/Linux terminal).
 
 Run:
@@ -87,14 +88,14 @@ or, on macOS/Linux, try:
 python3 --version
 ```
 
-If the version shown is between 3.8 and 3.12 (e.g., Python 3.9.13, Python 3.11.5, Python 3.12.7), you already meet the requirement and can skip the installation steps below. Otherwise, follow the instructions below to install Python.
+If the version shown is between 3.9 and 3.12 (e.g., Python 3.9.13, Python 3.11.5, Python 3.12.7), you already meet the requirement and can skip the installation steps below. Otherwise, follow the instructions below to install Python.
 
 #### On Windows
 1. **Download the Python 3.12.7 installer** directly from the Python website:
    - [https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe](https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe)
 
 2. **Run the installer**:
-   - **IMPORTANT**: At the very first screen, check the box that says **"Add Python to PATH"**. This option is **unchecked by default** — if you miss it, Python will not be recognised by your terminal.
+   - **IMPORTANT**: At the very first screen, check the box that says **"Add Python to PATH"**. This option is **unchecked by default** — if you miss it, Python will not be recognized by your terminal.
    - Click "Install Now" and follow the prompts.
 
 3. **Verify the installation**:
@@ -223,6 +224,7 @@ source skema_env/bin/activate
 # Install in development mode
 pip install -e .
 ```
+Alternatively, users can use the provided `poetry.lock` file with Poetry (poetry install), which will automatically create and manage a virtual environment while ensuring all dependencies are installed with exact, reproducible versions.
 
 **Installing Git (only needed for Option 2):**
 - **Windows**: `winget install --id Git.Git -e --source winget` or download from [git-scm.com](https://git-scm.com/download/win)
@@ -366,7 +368,7 @@ The mosaic is reprojected to BC Albers (EPSG:3005) at 10 m resolution (this is i
 
 ### Model Types
 
-SKeMa supports a few model types, selectable via the --model-type flag::
+SKeMa supports a few model types, selectable via the --model-type flag:
 
 1. **`model_s2bandsandindices_only`** (default): Uses only Sentinel-2 bands and derived spectral indices. This model does not require bathymetry or substrate files, making it suitable for areas outside British Columbia or when these static files are unavailable. 
 
@@ -413,7 +415,7 @@ skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif -
 # Apply eelgrass masking (works with any model type)
 skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --eelgrass-masking
 
-# Combine both masking filters (single combined _masked.tif output - requires static files))
+# Combine both masking filters (single combined _masked.tif output - requires static files)
 skema --input-dir "path/to/sentinel2/safe/folder" --output-filename output.tif --soft-substrate-masking --eelgrass-masking
 
 # Batch mode with ensemble model and BoPs substrate
@@ -448,6 +450,97 @@ In addition to the per-scene output folders described above (with `<SAFE_name>_o
 - **`mosaic_kelp_map.tif`**: a single binary GeoTIFF mosaic merging all scene predictions, in BC Albers projection (EPSG:3005) at 10 m resolution.
 
 - **`mosaic_kelp_map_masked.tif`** *(only when `--soft-substrate-masking` and/or `--eelgrass-masking` are set)*: a combined masked mosaic built from the per-scene `_masked.tif` files, in BC Albers projection (EPSG:3005) at 10 m resolution.
+
+
+
+### Opening and Visualizing Kelp Maps in QGIS
+
+The output GeoTIFF files generated by SKeMa can be viewed and analyzed in GIS software such as QGIS (free and open source: https://qgis.org/). This section explains how to visualize the Sentinel-2 imagery in false color and overlay the predicted kelp map.
+
+#### Opening the Sentinel-2 Image
+
+The file:
+
+```text
+<SAFE_name>_B2B3B4B8.tif
+```
+
+contains four Sentinel-2 bands at 10 m resolution:
+
+|**Band**|	**Description**|
+|-|-|
+|B02	|Blue|
+|B03	|Green|
+|B04	|Red|
+|B08	|Near Infrared (NIR)|
+
+To display this image as a false-color composite in QGIS:
+
+Open QGIS.
+Drag and drop the file `<SAFE_name>_B2B3B4B8.tif` into the QGIS window.
+In the **Layers panel**, right-click the layer and select **Properties**.
+Go to the **Symbology tab**.
+Set:
+**Render type** → `Multiband color`
+**Red band** → `Band 4 (B08 / NIR)`
+**Green band** → `Band 3 (B04 / Red)`
+**Blue band** → `Band 2 (B03 / Green)`
+
+This produces a standard Sentinel-2 false-color image where vegetation and kelp appear in shades of red.
+
+#### Improving the Visualization with Contrast Stretching
+
+Sentinel-2 reflectance values often appear dark by default. To improve visualization:
+
+In the same **Symbology** window, locate the **Min / Max Value Settings** section.
+Set:
+Contrast enhancement → `Stretch to MinMax`
+Set approximate maximum values:
+**Red (NIR / B08)** → `400`
+**Green (Red / B04)** → `600`
+**Blue (Green / B03)** → `800`
+Click **Apply**.
+
+These values work well for many coastal Sentinel-2 scenes, although optimal values may vary slightly between images depending on atmospheric conditions, season, and illumination.
+
+#### Opening the Kelp Prediction Map
+
+The prediction file:
+
+```text
+output.tif
+```
+
+(or your chosen output filename) is a binary raster where:
+
+|Value|	Meaning|
+|-|-|
+|1|	Kelp|
+|0|	Non-kelp|
+
+Drag the prediction GeoTIFF into QGIS.
+
+#### Overlaying Kelp Predictions on the False-Color Image
+
+To display only kelp pixels as a yellow overlay:
+
+Right-click the prediction raster and select **Properties**.
+Go to the **Symbology** tab.
+Set:
+**Render type** → `Paletted/Unique values`
+Click Classify.
+For value `1`:
+Set the fill color to yellow.
+For value `0`:
+Set opacity to `0%` or remove the class entirely.
+Click **Apply**.
+
+The kelp canopy predictions will now appear as yellow regions overlaid on the Sentinel-2 false-color image.
+
+For best visualization:
+
+- Place the kelp layer above the Sentinel-2 image in the Layers panel.
+- Optionally reduce kelp layer opacity slightly (e.g., 70–80%) to better see the underlying imagery.
 ---
 
 ## 🗂️ Static Files
