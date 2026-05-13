@@ -520,7 +520,7 @@ The prediction file (e.g., `output.tif`) is a binary raster:
    * Set **Render type** to `Paletted/Unique values`.
    * Click **Classify**.
    * **Value 1 (Kelp):** Set fill color to yellow.
-   * **Value 0 (Non-kelp):** Set opacity to `0%` (transparent) or remove the class.
+   * **Value 0 (Non-kelp):** Set opacity to `0%` (transparent) after double-clicking on the color.
 4. Click **Apply**.
 
 The kelp canopy predictions will now appear as yellow regions overlaid on the Sentinel-2 false-color image.
