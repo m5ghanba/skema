@@ -474,17 +474,16 @@ contains four Sentinel-2 bands at 10 m resolution:
 |B04	|Red|
 |B08	|Near Infrared (NIR)|
 
-To display this image as a false-color composite in QGIS:
+**To display this image as a false-color composite in QGIS:**
 
-Open QGIS.
-Drag and drop the file `<SAFE_name>_B2B3B4B8.tif` into the QGIS window.
-In the **Layers panel**, right-click the layer and select **Properties**.
-Go to the **Symbology tab**.
-Set:
-**Render type** → `Multiband color`
-**Red band** → `Band 4 (B08 / NIR)`
-**Green band** → `Band 3 (B04 / Red)`
-**Blue band** → `Band 2 (B03 / Green)`
+1. Open QGIS.
+1. **Import:** Drag and drop the file `<SAFE_name>_B2B3B4B8.tif` into the QGIS window.
+2. **Layer Properties:** In the **Layers panel**, right-click the layer and select **Properties**.
+3. **Set Symbology:** Navigate to the **Symbology tab** and configure the following:
+   * **Render type:** `Multiband color`
+   * **Red band:** `Band 4 (B08 / NIR)`
+   * **Green band:** `Band 3 (B04 / Red)`
+   * **Blue band:** `Band 2 (B03 / Green)`
 
 This produces a standard Sentinel-2 false-color image where vegetation and kelp appear in shades of red.
 
@@ -492,48 +491,35 @@ This produces a standard Sentinel-2 false-color image where vegetation and kelp 
 
 Sentinel-2 reflectance values often appear dark by default. To improve visualization:
 
-In the same **Symbology** window, locate the **Min / Max Value Settings** section.
-Set:
-Contrast enhancement → `Stretch to MinMax`
-Set approximate maximum values:
-**Red (NIR / B08)** → `400`
-**Green (Red / B04)** → `600`
-**Blue (Green / B03)** → `800`
-Click **Apply**.
+1. In the **Symbology** window, locate the **Min / Max Value Settings**.
+2. Set **Contrast enhancement** to `Stretch to MinMax`.
+3. Manually set the approximate maximum values for better clarity:
+   * **Red (NIR / B08):** `400`
+   * **Green (Red / B04):** `600`
+   * **Blue (Green / B03):** `800`
+4. Click **Apply**.
 
 These values work well for many coastal Sentinel-2 scenes, although optimal values may vary slightly between images depending on atmospheric conditions, season, and illumination.
 
 #### Opening the Kelp Prediction Map
 
-The prediction file:
+The prediction file (e.g., `output.tif`) is a binary raster:
 
-```text
-output.tif
-```
+| Value | Meaning |
+| :--- | :--- |
+| **1** | Kelp |
+| **0** | Non-kelp |
 
-(or your chosen output filename) is a binary raster where:
+**To visualize the kelp overlay:**
 
-|Value|	Meaning|
-|-|-|
-|1|	Kelp|
-|0|	Non-kelp|
-
-Drag the prediction GeoTIFF into QGIS.
-
-#### Overlaying Kelp Predictions on the False-Color Image
-
-To display only kelp pixels as a yellow overlay:
-
-Right-click the prediction raster and select **Properties**.
-Go to the **Symbology** tab.
-Set:
-**Render type** → `Paletted/Unique values`
-Click Classify.
-For value `1`:
-Set the fill color to yellow.
-For value `0`:
-Set opacity to `0%` or remove the class entirely.
-Click **Apply**.
+1. **Import:** Drag the prediction GeoTIFF into QGIS.
+2. **Layer Properties:** Right-click the prediction raster and select **Properties** > **Symbology**.
+3. **Configure Overlay:**
+   * Set **Render type** to `Paletted/Unique values`.
+   * Click **Classify**.
+   * **Value 1 (Kelp):** Set fill color to yellow.
+   * **Value 0 (Non-kelp):** Set opacity to `0%` (transparent) or remove the class.
+4. Click **Apply**.
 
 The kelp canopy predictions will now appear as yellow regions overlaid on the Sentinel-2 false-color image.
 
