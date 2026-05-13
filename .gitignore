@@ -26,3 +26,6 @@ Thumbs.db
 
 # Ignore the substrate and bathymetry TIFF files
 skema/static/bathy_substrate/*.tif
+
+# Ignore pytest cache
+.pytest_cache/

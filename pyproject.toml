@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skema-kelp"
-version = "0.3.4"
+version = "0.3.5"
 description = "Satellite-based kelp classification from Sentinel-2 using semantic segmentation"
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
@@ -18,7 +18,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -47,6 +46,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "pytest-cov>=4.0",
     "black>=23.0",
     "flake8>=6.0",
 ]
@@ -65,9 +65,22 @@ skema = "skema.cli:main"
 [tool.setuptools]
 packages = [
   "skema",
+  "skema.preprocessing",
+  "skema.model",
+  "skema.inference",
+  "skema.masking",
+  "skema.postprocessing",
   "skema.static",
   "skema.static.bathy_substrate",
   "skema.static.masks",
 ]
 [tool.setuptools.package-data]
-"skema.static.masks" = ["*.gpkg"]
+"skema.static.masks" = ["*.gpkg", "*.shp", "*.dbf", "*.shx", "*.prj"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["skema"]
+omit = ["tests/*", "skema/static/*"]

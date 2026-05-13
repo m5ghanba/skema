@@ -63,7 +63,6 @@ def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_maski
     # Define the normalization stats based on model type and substrate source
     if model_type == 'model_full' or model_type == 'model_ensemble':
         if use_bops_substrate:
-            # BoPs substrate stats (6th value differs: substrate channel mean/std)
             mean_per_channel = [2.02127847e+02, 2.64991799e+02, 1.45913497e+02, 9.57456953e+02,
                                 3.20302883e+02, 8.15331190e-01, -6.30723576e+00, 7.60650406e+00,
                                 3.66107438e-02, 1.84492036e-01, -1.84492036e-01, 1.56750584e+00,
@@ -73,7 +72,6 @@ def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_maski
                                 6.71879776e-01, 7.23202999e-01, 7.23202999e-01, 3.86945642e+00,
                                 4.06695959e-01]
         else:
-            # RF substrate stats (default)
             mean_per_channel = [2.02127847e+02, 2.64991799e+02, 1.45913497e+02, 9.57456953e+02,
                                 3.20302883e+02, 1.37548690e+00, -6.30723576e+00, 7.60650406e+00,
                                 3.66107438e-02, 1.84492036e-01, -1.84492036e-01, 1.56750584e+00,
@@ -100,7 +98,6 @@ def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_maski
                 f"--input-dir must be an existing directory when --batch-dir is set. Got: {input_dir}"
             )
 
-        # Find all .SAFE folders directly inside input_dir
         safe_folders = sorted([
             os.path.join(input_dir, d)
             for d in os.listdir(input_dir)
@@ -116,21 +113,16 @@ def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_maski
 
         for idx, safe_path in enumerate(safe_folders, start=1):
             safe_basename = os.path.basename(safe_path).replace('.SAFE', '')
-            # Build per-scene output filename: <SAFE_basename>_<output_filename>
             scene_output_filename = f"{safe_basename}_{output_filename}"
 
             click.echo(f"[{idx}/{len(safe_folders)}] Processing: {safe_basename}")
 
             segment(safe_path, scene_output_filename, mean_per_channel, std_per_channel, model_type, soft_substrate_masking, use_bops_substrate, eelgrass_masking)
 
-            # The segment() function saves the result inside a folder named after the SAFE basename,
-            # located next to the .SAFE file (i.e. inside input_dir).
             output_folder = os.path.join(input_dir, safe_basename)
             output_tif_path = os.path.join(output_folder, scene_output_filename)
             processed_output_paths.append(output_tif_path)
 
-
-        # Create mosaic from all processed outputs
         click.echo("="*60)
         click.echo("All scenes processed. Creating mosaic...")
         mosaic_path = os.path.join(input_dir, "mosaic_kelp_map.tif")
@@ -138,7 +130,7 @@ def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_maski
         click.echo("="*60 + "\n")
 
     # ------------------------------------------------------------------ #
-    #  SINGLE-SCENE MODE (original behaviour)                             #
+    #  SINGLE-SCENE MODE                                                   #
     # ------------------------------------------------------------------ #
     else:
         if not input_dir.upper().endswith('.SAFE'):

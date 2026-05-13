@@ -2,7 +2,7 @@
 SKeMa: Satellite-based Kelp Mapping using Semantic Segmentation on Sentinel-2 imagery
 """
 
-__version__ = "0.3.4"
+__version__ = "0.3.5"
 __author__ = "Mohsen Ghanbari"
 __email__ = "mohsenghanbari@uvic.ca"
 __doi__ = "10.57967/hf/6790"
@@ -13,6 +13,6 @@ import warnings
 warnings.filterwarnings('ignore')
 os.environ['NO_ALBUMENTATIONS_UPDATE'] = '1'
 
-from skema.lib import segment
+from skema.lib import segment, create_mosaic
 
-__all__ = ["segment"]
+__all__ = ["segment", "create_mosaic"]

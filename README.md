@@ -611,40 +611,77 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ## ⚙️ Project Structure
 
-```text  
-skema/  
-├── skema/  
-│   ├── cli.py  
-│   ├── lib.py  
-│   ├── __init__.py  
-│   │  
-│   └── static/  
-│       ├── __init__.py  
-│       │  
-│       ├── masks/  
-│       │   ├── valid_depth_zone.gpkg  
-│       │   ├── BCMCA_ECO_VascPlants_Eelgrass_Polygons_DATA.shp  
-│       │   └── (associated .dbf, .shx, .prj, .sbn, .sbx files)  
-│       │  
-│       └── bathy_substrate/  
-│           ├── __init__.py  
-│           ├── Bathymetry.tif  
-│           ├── Slope.tif  
-│           ├── NCC_substrate_20m.tif  
-│           ├── SOG_substrate_20m.tif  
-│           ├── WCVI_substrate_20m.tif  
-│           ├── QCS_substrate_20m.tif  
-│           ├── HG_substrate_20m.tif  
+```text
+skema/                                  ← repo root
+│
+├── .github/
+│   └── workflows/
+│       └── tests.yml                   ← CI: runs pytest on every push / PR
+│
+├── skema/                              ← installable Python package
+│   ├── __init__.py                     ← exposes segment()
+│   ├── cli.py                          ← Click entry-point (skema command)
+│   ├── lib.py                          ← high-level orchestration (segment, create_mosaic)
+│   │
+│   ├── preprocessing/                  ← all input-preparation logic
+│   │   ├── __init__.py
+│   │   ├── band_extraction.py          ← extract S2 bands from .SAFE → GeoTIFF
+│   │   ├── indices.py                  ← spectral index functions + INDEX_CALCULATORS registry
+│   │   ├── normalization.py            ← per-channel mean/std normalization
+│   │   ├── slope.py                    ← Horn slope calculation (windowed)
+│   │   └── static_layers.py           ← warp / merge / fill substrate & bathy rasters
+│   │
+│   ├── model/                          ← model definition and weight loading
+│   │   ├── __init__.py
+│   │   ├── architecture.py             ← SegModel (PyTorch-Lightning U-Net + MaxViT-Tiny)
+│   │   └── loader.py                   ← download weights from HuggingFace, return SegModel
+│   │
+│   ├── inference/                      ← tile-based inference engine
+│   │   ├── __init__.py
+│   │   └── engine.py                   ← DatasetInference: tiling, weighted stitching, save
+│   │
+│   ├── masking/                        ← post-inference spatial filters
+│   │   └── __init__.py                 ← exclusion zones, depth mask, eelgrass mask
+│   │
+│   ├── postprocessing/                 ← output creation
+│   │   ├── __init__.py
+│   │   └── mosaic.py                   ← maximum-value BC Albers mosaic from multiple scenes
+│   │
+│   └── static/                         ← packaged geodata (read-only)
+│       ├── __init__.py
+│       ├── masks/
+│       │   ├── valid_depth_zone.gpkg
+│       │   ├── BCMCA_ECO_VascPlants_Eelgrass_Polygons_DATA.shp
+│       │   └── (associated .dbf, .shx, .prj files)
+│       └── bathy_substrate/
+│           ├── __init__.py
+│           ├── Bathymetry.tif          ← place downloaded static files here
+│           ├── Slope.tif
+│           ├── NCC_substrate_20m.tif
+│           ├── SOG_substrate_20m.tif
+│           ├── WCVI_substrate_20m.tif
+│           ├── QCS_substrate_20m.tif
+│           ├── HG_substrate_20m.tif
 │           ├── BoPs_HG_10m.tif
 │           ├── BoPs_NCC_10m.tif
 │           ├── BoPs_QCSSOG_10m.tif
 │           └── BoPs_WCVI_10m.tif
+│
+├── tests/                              ← pytest unit-test suite (no GPU / network required)
+│   ├── __init__.py
+│   ├── conftest.py                     ← shared fixtures
+│   ├── test_indices.py                 ← spectral index functions
+│   ├── test_normalization.py           ← mean/std normalization
+│   ├── test_slope.py                   ← Horn slope calculation
+│   ├── test_static_layers.py           ← fill_nodata and substrate helpers
+│   ├── test_inference_engine.py        ← weight map, tile generation, index computation
+│   └── test_model_loader.py            ← SegModel instantiation and load_model (mocked)
+│
 ├── notebooks/
 │   └── rasterizeNearshoreBottomPatches_BoPs.ipynb
-├── pyproject.toml  
-├── setup.py  
-├── requirements.txt  
-├── README.md  
+│
+├── pyproject.toml                      ← build config + dev extras (pytest, black, flake8)
+└── README.md
 ```
 
 ---
