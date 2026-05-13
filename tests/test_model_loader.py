@@ -42,13 +42,15 @@ class TestSegModelInstantiation:
         assert isinstance(model, SegModel)
 
     def test_forward_returns_correct_shape(self):
-        """Smoke-test forward pass with a tiny random input (CPU only)."""
+        """Smoke-test forward pass with a valid input size for MaxViT (CPU only).
+        tu-maxvit_tiny_tf_512 requires spatial dims divisible by 512 at the
+        partition-attention stage, so 512×512 is the minimum valid input.
+        """
         model = SegModel("Unet", "tu-maxvit_tiny_tf_512", in_channels=10, out_classes=1)
         model.eval()
-        # Spatial dims must be divisible by 32; use 32×32
-        x   = torch.zeros(1, 10, 32, 32)
+        x   = torch.zeros(1, 10, 512, 512)
         out = model(x)
-        assert out.shape == (1, 1, 32, 32)
+        assert out.shape == (1, 1, 512, 512)
 
     def test_loss_fn_is_dice(self):
         model = SegModel("Unet", "tu-maxvit_tiny_tf_512", in_channels=10, out_classes=1)
