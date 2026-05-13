@@ -501,6 +501,8 @@ Sentinel-2 reflectance values often appear dark by default. To improve visualiza
 
 These values work well for many coastal Sentinel-2 scenes, although optimal values may vary slightly between images depending on atmospheric conditions, season, and illumination.
 
+![S2 Visalization](docs/images/s2_false_color_visualization.png)
+
 #### Opening the Kelp Prediction Map
 
 The prediction file (e.g., `output.tif`) is a binary raster:
@@ -522,6 +524,8 @@ The prediction file (e.g., `output.tif`) is a binary raster:
 4. Click **Apply**.
 
 The kelp canopy predictions will now appear as yellow regions overlaid on the Sentinel-2 false-color image.
+
+![Kelp Visalization](docs/images/kelp_visualization.png)
 
 For best visualization:
 
