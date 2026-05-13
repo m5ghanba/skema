@@ -1,0 +1,55 @@
+name: Tests
+
+on:
+  push:
+    branches: ["**"]          # run on every branch push
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} — ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      # ── 1. Check out the repo ───────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Python ────────────────────────────────────────────────
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      # ── 3. Install CPU-only PyTorch first ───────────────────────────────
+      #   CI runners have no GPU.  Installing the CPU wheel before the rest
+      #   of the dependencies avoids pulling in the large CUDA wheels.
+      - name: Install CPU-only PyTorch
+        run: |
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+      # ── 4. Install the package with dev extras ──────────────────────────
+      - name: Install skema-kelp[dev]
+        run: |
+          pip install -e ".[dev]"
+
+      # ── 5. Run the test suite ────────────────────────────────────────────
+      - name: Run pytest
+        run: |
+          pytest tests/ -v --tb=short
+
+      # ── 6. (Optional) Upload coverage report ────────────────────────────
+      #   Remove this step if you don't use coverage reporting.
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: false
