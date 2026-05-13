@@ -60,22 +60,6 @@ def main(input_dir, output_filename, model_type, batch_dir, soft_substrate_maski
     click.echo(f"Eelgrass Masking:       {'Yes' if eelgrass_masking else 'No'}")
     click.echo("="*60 + "\n")
 
-    # # Validate --soft-substrate-masking is not used with band-only model
-    # if soft_substrate_masking and model_type == 'model_s2bandsandindices_only':
-    #     raise click.UsageError(
-    #         "--soft-substrate-masking requires a substrate channel and cannot be used with "
-    #         "'model_s2bandsandindices_only'. "
-    #         "Please use --model-type model_full or --model-type model_ensemble."
-    #     )
-
-    # # Validate --use-bops-substrate is not used with band-only model
-    # if use_bops_substrate and model_type == 'model_s2bandsandindices_only':
-    #     raise click.UsageError(
-    #         "--use-bops-substrate requires a substrate channel and cannot be used with "
-    #         "'model_s2bandsandindices_only'. "
-    #         "Please use --model-type model_full or --model-type model_ensemble."
-    #     )
-
     # Define the normalization stats based on model type and substrate source
     if model_type == 'model_full' or model_type == 'model_ensemble':
         if use_bops_substrate:
